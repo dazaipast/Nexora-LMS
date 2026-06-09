@@ -5,10 +5,12 @@ from sqlalchemy import create_engine, text, event, inspect
 from sqlalchemy.orm import sessionmaker, joinedload
 
 from models import (
-    Base, Department, Role, User, Course, UserCourse, AuditLog,
+    Base, Department, Role, User, Course, CourseMaterial, UserCourse, AuditLog,
 )
+from utils import infer_course_type_from_title
 
 APP_DIR = Path(__file__).resolve().parent
+MATERIALS_DIR = APP_DIR / "course_materials"
 
 
 def _configure_sqlite_connection(dbapi_connection, _connection_record):
@@ -32,7 +34,10 @@ class DatabaseManager:
         self._run_migrations()
 
         Base.metadata.create_all(bind=self.engine)
+        MATERIALS_DIR.mkdir(parents=True, exist_ok=True)
+        self.materials_dir = MATERIALS_DIR
         self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
+        self._migrate_course_types()
 
     def _run_migrations(self):
         """Применяет миграции к существующей БД"""
@@ -58,6 +63,34 @@ class DatabaseManager:
                         "REFERENCES departments(id)"
                     )
 
+            if 'courses' in table_names:
+                course_columns = {col['name'] for col in inspector.get_columns('courses')}
+                if 'module_count' not in course_columns:
+                    migrations.append(
+                        "ALTER TABLE courses ADD COLUMN module_count INTEGER NOT NULL DEFAULT 5"
+                    )
+                if 'course_type' not in course_columns:
+                    migrations.append(
+                        "ALTER TABLE courses ADD COLUMN course_type VARCHAR(30) "
+                        "NOT NULL DEFAULT 'special_skills'"
+                    )
+
+            if 'course_materials' in table_names:
+                material_columns = {col['name'] for col in inspector.get_columns('course_materials')}
+                if 'module_index' not in material_columns:
+                    migrations.append(
+                        "ALTER TABLE course_materials ADD COLUMN module_index INTEGER NOT NULL DEFAULT 1"
+                    )
+                if 'content_kind' not in material_columns:
+                    migrations.append(
+                        "ALTER TABLE course_materials ADD COLUMN content_kind VARCHAR(20) "
+                        "NOT NULL DEFAULT 'file'"
+                    )
+                if 'quiz_data' not in material_columns:
+                    migrations.append(
+                        "ALTER TABLE course_materials ADD COLUMN quiz_data TEXT"
+                    )
+
             if not migrations:
                 return
 
@@ -68,6 +101,33 @@ class DatabaseManager:
             print("Миграция выполнена успешно!")
         except Exception as exc:
             print(f"Ошибка миграции БД: {exc}")
+
+    def _migrate_course_types(self):
+        """Определяет тип старых курсов по названию, если типы ещё не заданы."""
+        db = self.get_session()
+        try:
+            courses = db.query(Course).all()
+            if not courses:
+                return
+            if any(
+                getattr(course, "course_type", None) not in (None, "", "special_skills")
+                for course in courses
+            ):
+                return
+
+            changed = False
+            for course in courses:
+                inferred = infer_course_type_from_title(course.title)
+                if course.course_type != inferred:
+                    course.course_type = inferred
+                    changed = True
+            if changed:
+                db.commit()
+        except Exception as exc:
+            db.rollback()
+            print(f"Ошибка миграции типов курсов: {exc}")
+        finally:
+            db.close()
 
     def get_session(self):
         return self.SessionLocal()
@@ -162,18 +222,21 @@ class DatabaseManager:
                         description="Базовое обучение",
                         department_id=1,
                         creator_id=admin_user.id,
+                        course_type="adaptation",
                     ),
                     Course(
                         title="Продажи в пластической хирургии",
                         description="VIP-обслуживание",
                         department_id=2,
                         creator_id=manager_user.id,
+                        course_type="practice",
                     ),
                     Course(
                         title="Работа с возражениями",
                         description="Техники работы",
                         department_id=2,
                         creator_id=manager_user.id,
+                        course_type="objection_handling",
                     ),
                 ]
                 for course in courses:

@@ -5,8 +5,9 @@ from services.audit_service import AuditService
 from services.stats_service import StatsService
 from services.learning_service import LearningService
 from services.report_service import ReportService
+from services.material_service import MaterialService
 
 __all__ = [
     "AuthManager", "UserService", "CourseService", "AuditService", "StatsService",
-    "LearningService", "ReportService",
+    "LearningService", "ReportService", "MaterialService",
 ]

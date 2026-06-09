@@ -9,25 +9,30 @@ from PyQt6.QtGui import QFont
 
 from constants import HISTORY_HEADERS
 from models import User, UserCourse, Course
-from utils import format_percent, course_pass_status, split_employee_progress
+from utils import format_percent, course_pass_status, split_employee_progress, course_type_label
 from ui.table_helpers import (
     configure_readonly_table,
     fill_text_list,
     fill_history_table,
     get_selected_course_id,
 )
-from ui.dialogs import open_course_passing_dialog, show_course_details
+from ui.dialogs import (
+    open_course_passing_dialog,
+    show_course_details,
+    open_course_materials_dialog,
+)
 
-EMPLOYEE_COURSE_HEADERS = ["Название", "Прогресс", "Срок (дн.)", "Порог %", "Статус"]
+EMPLOYEE_COURSE_HEADERS = ["Название", "Тип", "Прогресс", "Срок (дн.)", "Порог %", "Статус"]
 
 
 class EmployeeLearningWidget(QWidget):
-    def __init__(self, actor_user, db_manager, course_service, learning_service):
+    def __init__(self, actor_user, db_manager, course_service, learning_service, material_service):
         super().__init__()
         self.actor_user = actor_user
         self.db_manager = db_manager
         self.course_service = course_service
         self.learning_service = learning_service
+        self.material_service = material_service
         self._init_ui()
         self._load_data()
     
@@ -61,7 +66,7 @@ class EmployeeLearningWidget(QWidget):
 
         self.skill_progress = QProgressBar()
         self.skill_progress.setMaximum(100)
-        self.skill_progress.setFormat("Специальные навыки: %p%")
+        self.skill_progress.setFormat("Проф. навыки: %p%")
 
         prog_layout.addWidget(self.adapt_progress)
         prog_layout.addWidget(self.know_progress)
@@ -93,8 +98,11 @@ class EmployeeLearningWidget(QWidget):
         pass_course_btn.clicked.connect(self._open_pass_course_dialog)
         view_course_btn = QPushButton("Просмотр")
         view_course_btn.clicked.connect(self._open_view_course_dialog)
+        materials_btn = QPushButton("Материалы")
+        materials_btn.clicked.connect(self._open_course_materials_dialog)
         course_actions.addWidget(pass_course_btn)
         course_actions.addWidget(view_course_btn)
+        course_actions.addWidget(materials_btn)
         course_actions.addStretch()
         courses_layout.addLayout(course_actions)
 
@@ -127,6 +135,7 @@ class EmployeeLearningWidget(QWidget):
             self.course_service,
             course_id,
             self,
+            material_service=self.material_service,
             on_success=self._load_data,
         )
 
@@ -135,7 +144,25 @@ class EmployeeLearningWidget(QWidget):
         if not course_id:
             QMessageBox.information(self, "Просмотр", "Выберите курс в таблице")
             return
-        show_course_details(self.actor_user, self.course_service, course_id, self)
+        show_course_details(
+            self.actor_user,
+            self.course_service,
+            course_id,
+            self,
+            material_service=self.material_service,
+        )
+
+    def _open_course_materials_dialog(self):
+        course_id = get_selected_course_id(self.courses_table)
+        if not course_id:
+            QMessageBox.information(self, "Материалы", "Выберите курс в таблице")
+            return
+        open_course_materials_dialog(
+            self,
+            self.actor_user,
+            self.material_service,
+            course_id,
+        )
 
     def _load_data(self):
         with self.db_manager.session_scope() as db:
@@ -171,10 +198,14 @@ class EmployeeLearningWidget(QWidget):
                 title_item.setData(Qt.ItemDataRole.UserRole, uc.course.id)
                 status = course_pass_status(uc.progress, uc.course.pass_threshold)
                 self.courses_table.setItem(row, 0, title_item)
-                self.courses_table.setItem(row, 1, QTableWidgetItem(format_percent(uc.progress)))
-                self.courses_table.setItem(row, 2, QTableWidgetItem(str(uc.course.deadline_days)))
-                self.courses_table.setItem(row, 3, QTableWidgetItem(str(uc.course.pass_threshold)))
-                self.courses_table.setItem(row, 4, QTableWidgetItem(status))
+                self.courses_table.setItem(
+                    row, 1,
+                    QTableWidgetItem(course_type_label(getattr(uc.course, "course_type", None))),
+                )
+                self.courses_table.setItem(row, 2, QTableWidgetItem(format_percent(uc.progress)))
+                self.courses_table.setItem(row, 3, QTableWidgetItem(str(uc.course.deadline_days)))
+                self.courses_table.setItem(row, 4, QTableWidgetItem(str(uc.course.pass_threshold)))
+                self.courses_table.setItem(row, 5, QTableWidgetItem(status))
 
             if active_courses:
                 adapt, know, skill = split_employee_progress(active_courses)

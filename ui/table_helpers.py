@@ -8,6 +8,8 @@ from utils import (
     format_event_line,
     format_ratio,
     format_history_date,
+    format_file_size,
+    course_type_label,
 )
 
 def configure_readonly_table(table, headers):
@@ -27,19 +29,70 @@ def get_selected_row_id(table):
 
 get_selected_course_id = get_selected_row_id
 get_selected_user_id = get_selected_row_id
+def get_selected_module_index(table):
+    row = table.currentRow()
+    if row < 0:
+        return None
+    item = table.item(row, 0)
+    return item.data(Qt.ItemDataRole.UserRole) if item else None
 
 
-def fill_courses_table(table, courses):
+def get_selected_material_id(table):
+    row = table.currentRow()
+    if row < 0:
+        return None
+    item = table.item(row, 1)
+    if not item:
+        return None
+    return item.data(Qt.ItemDataRole.UserRole)
+
+
+def fill_courses_table(table, courses, material_counts=None):
+    counts = material_counts or {}
     table.setRowCount(len(courses))
     for row, course in enumerate(courses):
         title_item = QTableWidgetItem(course.title)
         title_item.setData(Qt.ItemDataRole.UserRole, course.id)
         table.setItem(row, 0, title_item)
-        table.setItem(row, 1, QTableWidgetItem(course.department.name if course.department else ""))
-        table.setItem(row, 2, QTableWidgetItem(course.creator.full_name if course.creator else ""))
-        table.setItem(row, 3, QTableWidgetItem(str(course.deadline_days)))
-        table.setItem(row, 4, QTableWidgetItem(str(course.pass_threshold)))
-        table.setItem(row, 5, QTableWidgetItem("Активен" if course.is_active else "Неактивен"))
+        table.setItem(
+            row, 1,
+            QTableWidgetItem(course_type_label(getattr(course, "course_type", None))),
+        )
+        table.setItem(row, 2, QTableWidgetItem(course.department.name if course.department else ""))
+        table.setItem(row, 3, QTableWidgetItem(course.creator.full_name if course.creator else ""))
+        table.setItem(row, 4, QTableWidgetItem(str(getattr(course, "module_count", 5) or 5)))
+        table.setItem(row, 5, QTableWidgetItem(str(course.deadline_days)))
+        table.setItem(row, 6, QTableWidgetItem(str(course.pass_threshold)))
+        attached = counts.get(course.id, 0)
+        total = getattr(course, "module_count", 5) or 5
+        table.setItem(row, 7, QTableWidgetItem(f"{attached}/{total}"))
+        table.setItem(row, 8, QTableWidgetItem("Активен" if course.is_active else "Неактивен"))
+
+
+def fill_module_materials_table(table, modules):
+    table.setRowCount(len(modules))
+    for row, module in enumerate(modules):
+        module_index = module["module_index"]
+        material = module.get("material")
+
+        stage_item = QTableWidgetItem(f"Этап {module_index}")
+        stage_item.setData(Qt.ItemDataRole.UserRole, module_index)
+        table.setItem(row, 0, stage_item)
+
+        if material:
+            file_item = QTableWidgetItem(
+                material.get("display_name", material["original_name"])
+            )
+            file_item.setData(Qt.ItemDataRole.UserRole, material["id"])
+            table.setItem(row, 1, file_item)
+            table.setItem(row, 2, QTableWidgetItem(format_file_size(material["file_size"])))
+            table.setItem(row, 3, QTableWidgetItem(material["uploaded_by"]))
+        else:
+            empty_item = QTableWidgetItem("—")
+            empty_item.setData(Qt.ItemDataRole.UserRole, None)
+            table.setItem(row, 1, empty_item)
+            table.setItem(row, 2, QTableWidgetItem("—"))
+            table.setItem(row, 3, QTableWidgetItem("—"))
 
 
 def fill_users_table(table, users):

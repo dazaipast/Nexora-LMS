@@ -15,6 +15,7 @@ from services import (
     StatsService,
     LearningService,
     ReportService,
+    MaterialService,
 )
 from ui.dashboards import AdminDashboardWidget, DepartmentHeadDashboardWidget
 from ui.employee import EmployeeLearningWidget
@@ -120,6 +121,7 @@ class MainWindow(QMainWindow):
         audit_service = AuditService(self.db_manager)
         stats_service = StatsService(self.db_manager)
         report_service = ReportService(self.db_manager, stats_service)
+        material_service = MaterialService(self.db_manager)
         if self.current_user.is_role('main_admin'):
             widget = AdminDashboardWidget(
                 self.current_user,
@@ -129,6 +131,7 @@ class MainWindow(QMainWindow):
                 audit_service,
                 stats_service,
                 report_service,
+                material_service,
             )
         elif self.current_user.is_role('department_head'):
             widget = DepartmentHeadDashboardWidget(
@@ -139,6 +142,7 @@ class MainWindow(QMainWindow):
                 audit_service,
                 stats_service,
                 report_service,
+                material_service,
             )
         else:
             widget = EmployeeLearningWidget(
@@ -146,6 +150,7 @@ class MainWindow(QMainWindow):
                 self.db_manager,
                 course_service,
                 LearningService(self.db_manager),
+                material_service,
             )
         self.setCentralWidget(widget)
     

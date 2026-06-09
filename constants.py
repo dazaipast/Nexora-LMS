@@ -7,9 +7,58 @@ EMPLOYEE_ROLE_ID = ROLE_CODES['employee']
 MIN_PASSWORD_LENGTH = 6
 DEFAULT_DEADLINE_DAYS = 30
 DEFAULT_PASS_THRESHOLD = 80
-MODULES_PER_COURSE = 5
+DEFAULT_MODULES_PER_COURSE = 5
+MIN_MODULES_PER_COURSE = 1
+MAX_MODULES_PER_COURSE = 20
+MODULES_PER_COURSE = DEFAULT_MODULES_PER_COURSE
+MAX_MATERIAL_SIZE_BYTES = 50 * 1024 * 1024
 
-COURSE_TABLE_HEADERS = ["Название", "Отдел", "Создатель", "Срок (дн.)", "Порог %", "Статус"]
+PROGRESS_GROUP_ADAPTATION = "adaptation"
+PROGRESS_GROUP_GENERAL = "general_knowledge"
+PROGRESS_GROUP_PROFESSIONAL = "professional"
+
+COURSE_TYPES = {
+    "adaptation": {
+        "label": "Адаптация",
+        "progress_group": PROGRESS_GROUP_ADAPTATION,
+    },
+    "general_knowledge": {
+        "label": "Общие знания",
+        "progress_group": PROGRESS_GROUP_GENERAL,
+    },
+    "objection_handling": {
+        "label": "Обработка возражений",
+        "progress_group": PROGRESS_GROUP_PROFESSIONAL,
+    },
+    "practice": {
+        "label": "Практика",
+        "progress_group": PROGRESS_GROUP_PROFESSIONAL,
+    },
+    "special_skills": {
+        "label": "Специальные навыки",
+        "progress_group": PROGRESS_GROUP_PROFESSIONAL,
+    },
+}
+
+DEFAULT_COURSE_TYPE = "special_skills"
+
+PRACTICE_COURSE_TYPE = "practice"
+QUIZ_FILE_EXTENSION = ".docx"
+
+ALLOWED_MATERIAL_EXTENSIONS = {
+    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+    ".txt", ".rtf", ".csv",
+    ".png", ".jpg", ".jpeg", ".gif", ".webp",
+    ".mp4", ".mp3", ".wav",
+    ".zip", ".rar", ".7z",
+}
+
+MODULE_MATERIALS_HEADERS = ["Этап", "Файл", "Размер", "Загрузил"]
+
+COURSE_TABLE_HEADERS = [
+    "Название", "Тип", "Отдел", "Создатель", "Этапов", "Срок (дн.)",
+    "Порог %", "Материалы", "Статус",
+]
 STAT_VALUE_STYLE = "font-size: 26px; font-weight: bold; color: {color};"
 STAT_TITLE_STYLE = "font-size: 13px; font-weight: bold; color: #2c3e50;"
 STAT_DESC_STYLE = "font-size: 11px; color: #7f8c8d;"
@@ -52,10 +101,14 @@ AUDIT_ACTION_LABELS = {
     "delete_user": "Удаление пользователя",
     "change_department": "Смена отдела",
     "create_course": "Создание курса",
+    "update_course": "Изменение курса",
     "deactivate_course": "Удаление курса",
     "assign_course": "Назначение курса",
     "complete_module": "Пройден модуль",
+    "complete_module_quiz": "Сдан тест этапа",
     "complete_course": "Завершение курса",
+    "add_course_material": "Добавление материала к курсу",
+    "delete_course_material": "Удаление материала курса",
 }
 
 EVENT_ACTION_ICONS = {
@@ -66,8 +119,12 @@ EVENT_ACTION_ICONS = {
     "delete_user": "⚠",
     "change_department": "↔",
     "create_course": "+",
+    "update_course": "↔",
     "deactivate_course": "⚠",
     "assign_course": "→",
     "complete_module": "→",
+    "complete_module_quiz": "✓",
     "complete_course": "✓",
+    "add_course_material": "+",
+    "delete_course_material": "⚠",
 }

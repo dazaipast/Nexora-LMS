@@ -4,10 +4,11 @@ from sqlalchemy.orm import joinedload
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QLineEdit,
     QTextEdit, QComboBox, QSpinBox, QListWidget, QListWidgetItem,
-    QDialogButtonBox, QMessageBox, QTableWidget,
+    QDialogButtonBox, QMessageBox, QTableWidget, QPushButton, QProgressBar,
+    QFileDialog, QScrollArea, QWidget, QRadioButton, QButtonGroup,
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
+from PyQt6.QtCore import Qt, QUrl
+from PyQt6.QtGui import QFont, QDesktopServices
 
 from constants import (
     ROLE_NAMES,
@@ -17,16 +18,30 @@ from constants import (
     MIN_PASSWORD_LENGTH,
     DEFAULT_DEADLINE_DAYS,
     DEFAULT_PASS_THRESHOLD,
+    DEFAULT_MODULES_PER_COURSE,
+    MIN_MODULES_PER_COURSE,
+    MAX_MODULES_PER_COURSE,
+    ALLOWED_MATERIAL_EXTENSIONS,
+    MODULE_MATERIALS_HEADERS,
+    MAX_MATERIAL_SIZE_BYTES,
+    COURSE_TYPES,
+    DEFAULT_COURSE_TYPE,
 )
 from models import Department, User, Course
 from utils import (
     load_departments_for_actor,
     build_module_content,
+    format_file_size,
+    course_type_label,
 )
 
 from ui.table_helpers import (
     get_selected_course_id,
+    get_selected_material_id,
+    get_selected_module_index,
     populate_department_combo,
+    configure_readonly_table,
+    fill_module_materials_table,
 )
 
 class ChangeDepartmentDialog(QDialog):
@@ -330,6 +345,20 @@ class AddCourseDialog(QDialog):
         self.threshold_input.setSuffix(" %")
         form.addRow("Порог сдачи:", self.threshold_input)
 
+        self.modules_input = QSpinBox()
+        self.modules_input.setRange(MIN_MODULES_PER_COURSE, MAX_MODULES_PER_COURSE)
+        self.modules_input.setValue(DEFAULT_MODULES_PER_COURSE)
+        self.modules_input.setSuffix(" этап.")
+        form.addRow("Количество этапов:", self.modules_input)
+
+        self.type_combo = QComboBox()
+        for type_code, info in COURSE_TYPES.items():
+            self.type_combo.addItem(info["label"], type_code)
+        default_index = self.type_combo.findData(DEFAULT_COURSE_TYPE)
+        if default_index >= 0:
+            self.type_combo.setCurrentIndex(default_index)
+        form.addRow("Тип курса:", self.type_combo)
+
         layout.addLayout(form)
 
         buttons = QDialogButtonBox(
@@ -358,6 +387,8 @@ class AddCourseDialog(QDialog):
                 department_id=self.department_combo.currentData(),
                 deadline_days=self.deadline_input.value(),
                 pass_threshold=self.threshold_input.value(),
+                module_count=self.modules_input.value(),
+                course_type=self.type_combo.currentData(),
             )
             self.accept()
         except PermissionError as exc:
@@ -522,11 +553,260 @@ def offer_assign_after_create(parent, actor_user, course_service, course_id, on_
             QMessageBox.warning(parent, "Ошибка", str(exc))
 
 
+def _materials_file_filter():
+    patterns = " ".join(f"*{ext}" for ext in sorted(ALLOWED_MATERIAL_EXTENSIONS))
+    return f"Поддерживаемые файлы ({patterns});;Все файлы (*.*)"
+
+
+class CourseMaterialsDialog(QDialog):
+    def __init__(self, actor_user, material_service, course_id, on_change=None, parent=None):
+        super().__init__(parent)
+        self.actor_user = actor_user
+        self.material_service = material_service
+        self.course_id = course_id
+        self.on_change = on_change
+        self._can_manage = False
+
+        self.setMinimumSize(700, 480)
+        self._init_ui()
+        self._load_data()
+
+    def _init_ui(self):
+        layout = QVBoxLayout(self)
+
+        self.title_label = QLabel()
+        self.title_label.setFont(QFont("Arial", 13, QFont.Weight.Bold))
+        self.title_label.setWordWrap(True)
+        layout.addWidget(self.title_label)
+
+        self.hint_label = QLabel()
+        self.hint_label.setWordWrap(True)
+        layout.addWidget(self.hint_label)
+
+        settings_row = QHBoxLayout()
+        settings_row.addWidget(QLabel("Количество этапов:"))
+        self.modules_input = QSpinBox()
+        self.modules_input.setRange(MIN_MODULES_PER_COURSE, MAX_MODULES_PER_COURSE)
+        settings_row.addWidget(self.modules_input)
+        self.save_modules_btn = QPushButton("Сохранить")
+        self.save_modules_btn.clicked.connect(self._save_module_count)
+        settings_row.addWidget(self.save_modules_btn)
+        settings_row.addStretch()
+        layout.addLayout(settings_row)
+
+        self.materials_table = QTableWidget()
+        configure_readonly_table(self.materials_table, MODULE_MATERIALS_HEADERS)
+        self.materials_table.doubleClicked.connect(self._open_selected_material)
+        layout.addWidget(self.materials_table)
+
+        actions = QHBoxLayout()
+        self.attach_btn = QPushButton("Прикрепить к этапу")
+        self.attach_btn.clicked.connect(self._attach_to_stage)
+        self.open_btn = QPushButton("Открыть")
+        self.open_btn.clicked.connect(self._open_selected_material)
+        self.delete_btn = QPushButton("Удалить")
+        self.delete_btn.clicked.connect(self._delete_selected_material)
+        actions.addWidget(self.attach_btn)
+        actions.addWidget(self.open_btn)
+        actions.addWidget(self.delete_btn)
+        actions.addStretch()
+        layout.addLayout(actions)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(self.reject)
+        buttons.accepted.connect(self.accept)
+        layout.addWidget(buttons)
+
+    def _load_data(self):
+        try:
+            payload = self.material_service.list_materials(
+                self.actor_user.id, self.course_id
+            )
+        except (PermissionError, ValueError) as exc:
+            QMessageBox.warning(self, "Ошибка", str(exc))
+            self.reject()
+            return
+
+        self._payload = payload
+        self._can_manage = payload["can_manage"]
+        self.setWindowTitle(f"Материалы: {payload['course_title']}")
+        self.title_label.setText(
+            f"Курс: {payload['course_title']} | "
+            f"этапов: {payload['module_count']} | "
+            f"материалов: {payload['attached_count']}/{payload['module_count']}"
+        )
+        if self._can_manage and payload.get("is_practice"):
+            self.hint_label.setText(
+                "Курс типа «Практика»: к каждому этапу прикрепите .docx файл с вопросами.\n"
+                "Формат:\n"
+                "Вопрос: Текст вопроса?\n"
+                "A) Вариант 1\nB) Вариант 2\nОтвет: B\n\n"
+                f"Максимальный размер файла: {format_file_size(MAX_MATERIAL_SIZE_BYTES)}."
+            )
+        elif self._can_manage:
+            self.hint_label.setText(
+                "К каждому этапу можно прикрепить один файл. "
+                "При повторной загрузке файл этапа будет заменён. "
+                f"Максимальный размер: {format_file_size(MAX_MATERIAL_SIZE_BYTES)}."
+            )
+        else:
+            self.hint_label.setText(
+                "Материалы по этапам курса. Выберите этап и нажмите «Открыть»."
+            )
+
+        self.modules_input.blockSignals(True)
+        self.modules_input.setValue(payload["module_count"])
+        self.modules_input.blockSignals(False)
+        self.modules_input.setEnabled(self._can_manage)
+        self.save_modules_btn.setVisible(self._can_manage)
+        self.attach_btn.setVisible(self._can_manage)
+        self.delete_btn.setVisible(self._can_manage)
+        fill_module_materials_table(self.materials_table, payload["modules"])
+
+    def _save_module_count(self):
+        try:
+            self.material_service.update_module_count(
+                self.actor_user.id,
+                self.course_id,
+                self.modules_input.value(),
+            )
+        except (PermissionError, ValueError) as exc:
+            QMessageBox.warning(self, "Ошибка", str(exc))
+            return
+        except Exception as exc:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить настройки: {exc}")
+            return
+
+        QMessageBox.information(self, "Готово", "Количество этапов обновлено")
+        self._load_data()
+        if self.on_change:
+            self.on_change()
+
+    def _attach_to_stage(self):
+        module_index = get_selected_module_index(self.materials_table)
+        if not module_index:
+            QMessageBox.information(self, "Прикрепить", "Выберите этап в таблице")
+            return
+
+        file_filter = (
+            "Тест Word (*.docx)"
+            if self._payload and self._payload.get("is_practice")
+            else _materials_file_filter()
+        )
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            f"Файл для этапа {module_index}",
+            "",
+            file_filter,
+        )
+        if not file_path:
+            return
+        try:
+            self.material_service.add_material(
+                self.actor_user.id,
+                self.course_id,
+                module_index,
+                file_path,
+            )
+        except PermissionError as exc:
+            QMessageBox.warning(self, "Доступ запрещён", str(exc))
+            return
+        except ValueError as exc:
+            QMessageBox.warning(self, "Ошибка", str(exc))
+            return
+        except Exception as exc:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось прикрепить файл: {exc}")
+            return
+
+        QMessageBox.information(self, "Готово", f"Файл прикреплён к этапу {module_index}")
+        self._load_data()
+        if self.on_change:
+            self.on_change()
+
+    def _open_selected_material(self):
+        material_id = get_selected_material_id(self.materials_table)
+        if not material_id:
+            QMessageBox.information(
+                self, "Открыть", "Для выбранного этапа материал не прикреплён"
+            )
+            return
+        self._open_material_by_id(material_id)
+
+    def _open_material_by_id(self, material_id):
+        try:
+            file_path = self.material_service.get_material_path(
+                self.actor_user.id, material_id
+            )
+        except (PermissionError, ValueError) as exc:
+            QMessageBox.warning(self, "Ошибка", str(exc))
+            return
+
+        if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(file_path))):
+            QMessageBox.warning(
+                self,
+                "Открыть",
+                f"Не удалось открыть файл:\n{file_path}",
+            )
+
+    def _delete_selected_material(self):
+        module_index = get_selected_module_index(self.materials_table)
+        if not module_index:
+            QMessageBox.information(self, "Удаление", "Выберите этап в таблице")
+            return
+        material_id = get_selected_material_id(self.materials_table)
+        if not material_id:
+            QMessageBox.information(self, "Удаление", "Для этого этапа материал не прикреплён")
+            return
+
+        row = self.materials_table.currentRow()
+        file_name = self.materials_table.item(row, 1).text()
+        answer = QMessageBox.question(
+            self,
+            "Удаление",
+            f"Удалить материал этапа {module_index} («{file_name}»)?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self.material_service.delete_material(self.actor_user.id, material_id)
+        except (PermissionError, ValueError) as exc:
+            QMessageBox.warning(self, "Ошибка", str(exc))
+            return
+        except Exception as exc:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось удалить файл: {exc}")
+            return
+
+        self._load_data()
+        if self.on_change:
+            self.on_change()
+
+
+def open_course_materials_dialog(parent, actor_user, material_service, course_id, on_change=None):
+    CourseMaterialsDialog(
+        actor_user,
+        material_service,
+        course_id,
+        on_change=on_change,
+        parent=parent,
+    ).exec()
+
+
 class CoursePassingDialog(QDialog):
-    def __init__(self, actor_user, course_service, course_id, on_progress=None, parent=None):
+    def __init__(
+        self,
+        actor_user,
+        course_service,
+        course_id,
+        material_service=None,
+        on_progress=None,
+        parent=None,
+    ):
         super().__init__(parent)
         self.actor_user = actor_user
         self.course_service = course_service
+        self.material_service = material_service
         self.course_id = course_id
         self.on_progress = on_progress
 
@@ -557,9 +837,32 @@ class CoursePassingDialog(QDialog):
         self.content.setReadOnly(True)
         layout.addWidget(self.content)
 
-        self.advance_btn = QPushButton("Завершить модуль")
+        self.quiz_scroll = QScrollArea()
+        self.quiz_scroll.setWidgetResizable(True)
+        self.quiz_container = QWidget()
+        self.quiz_layout = QVBoxLayout(self.quiz_container)
+        self.quiz_scroll.setWidget(self.quiz_container)
+        self.quiz_scroll.hide()
+        layout.addWidget(self.quiz_scroll)
+        self._quiz_button_groups = []
+
+        materials_row = QHBoxLayout()
+        self.materials_label = QLabel("Материалы курса: нет")
+        materials_row.addWidget(self.materials_label)
+        self.materials_btn = QPushButton("Открыть материал этапа")
+        self.materials_btn.clicked.connect(self._open_materials)
+        materials_row.addWidget(self.materials_btn)
+        materials_row.addStretch()
+        layout.addLayout(materials_row)
+
+        self.advance_btn = QPushButton("Завершить этап")
         self.advance_btn.clicked.connect(self._on_advance)
         layout.addWidget(self.advance_btn)
+
+        self.submit_quiz_btn = QPushButton("Сдать тест")
+        self.submit_quiz_btn.clicked.connect(self._on_submit_quiz)
+        self.submit_quiz_btn.hide()
+        layout.addWidget(self.submit_quiz_btn)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)
@@ -588,29 +891,208 @@ class CoursePassingDialog(QDialog):
         self.progress_bar.setValue(int(round(state["progress"])))
         self.progress_bar.setFormat(f"Прогресс: {state['progress']:.0f}%")
 
+        self._clear_quiz_ui()
+        self.quiz_scroll.hide()
+        self.submit_quiz_btn.hide()
+        self.advance_btn.show()
+
         if state["is_completed"]:
             self.module_label.setText(
-                f"Курс завершён ({state['modules_completed']}/{state['module_count']} модулей)"
+                f"Курс завершён ({state['modules_completed']}/{state['module_count']} этапов)"
             )
             self.content.setPlainText(
-                "Поздравляем! Вы прошли все модули курса.\n\n"
+                "Поздравляем! Вы прошли все этапы курса.\n\n"
                 "При необходимости вы можете просмотреть материалы через кнопку «Просмотр»."
             )
             self.advance_btn.setEnabled(False)
             self.advance_btn.setText("Курс завершён")
+            self._load_materials_info()
             return
 
         module_index = state["current_module"]
-        course_stub = SimpleNamespace(description=state["description"])
         self.module_label.setText(
-            f"Модуль {module_index} из {state['module_count']} "
+            f"Этап {module_index} из {state['module_count']} "
             f"(пройдено: {state['modules_completed']})"
         )
-        self.content.setPlainText(
-            build_module_content(course_stub, module_index, state["module_count"])
-        )
-        self.advance_btn.setEnabled(True)
-        self.advance_btn.setText(f"Завершить модуль {module_index}")
+
+        if state.get("is_practice"):
+            self.advance_btn.hide()
+            module_quiz = state.get("module_quiz") or {}
+            if module_quiz.get("has_quiz"):
+                self.content.setPlainText(
+                    f"Курс типа «Практика» — этап {module_index}.\n\n"
+                    f"Ответьте на {module_quiz['question_count']} вопросов. "
+                    f"Для перехода к следующему этапу нужно набрать "
+                    f"не менее {state['pass_threshold']}% правильных ответов."
+                )
+                self._build_quiz_ui(module_quiz)
+                self.quiz_scroll.show()
+                self.submit_quiz_btn.show()
+                self.submit_quiz_btn.setEnabled(True)
+                self.submit_quiz_btn.setText(f"Сдать тест этапа {module_index}")
+            else:
+                self.content.setPlainText(
+                    f"Этап {module_index}: тест не загружен.\n\n"
+                    "Обратитесь к руководителю — к этапу должен быть прикреплён "
+                    ".docx файл с вопросами и ответами."
+                )
+                self.submit_quiz_btn.show()
+                self.submit_quiz_btn.setEnabled(False)
+                self.submit_quiz_btn.setText("Тест не загружен")
+        else:
+            course_stub = SimpleNamespace(description=state["description"])
+            module_text = build_module_content(
+                course_stub, module_index, state["module_count"]
+            )
+            module_text += (
+                "\n\nИзучите материал текущего этапа и нажмите «Открыть материал этапа», "
+                "если файл прикреплён."
+            )
+            self.content.setPlainText(module_text)
+            self.advance_btn.setEnabled(True)
+            self.advance_btn.setText(f"Завершить этап {module_index}")
+
+        self._load_materials_info()
+
+    def _clear_quiz_ui(self):
+        while self.quiz_layout.count():
+            item = self.quiz_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+        self._quiz_button_groups = []
+
+    def _build_quiz_ui(self, module_quiz):
+        self._clear_quiz_ui()
+        option_letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        for question_index, question in enumerate(module_quiz.get("questions", []), start=1):
+            question_label = QLabel(f"{question_index}. {question['question']}")
+            question_label.setWordWrap(True)
+            question_label.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+            self.quiz_layout.addWidget(question_label)
+
+            group = QButtonGroup(self)
+            group.setExclusive(True)
+            for option_index, option_text in enumerate(question["options"]):
+                letter = (
+                    option_letters[option_index]
+                    if option_index < len(option_letters)
+                    else str(option_index + 1)
+                )
+                radio = QRadioButton(f"{letter}) {option_text}")
+                group.addButton(radio, option_index)
+                self.quiz_layout.addWidget(radio)
+            self._quiz_button_groups.append(group)
+            self.quiz_layout.addSpacing(8)
+
+    def _current_module_index(self):
+        if not hasattr(self, "_state"):
+            return None
+        if self._state.get("is_completed"):
+            return self._state.get("module_count")
+        return self._state.get("current_module")
+
+    def _load_materials_info(self):
+        if not self.material_service:
+            self.materials_label.setText("Материал этапа: недоступен")
+            self.materials_btn.setEnabled(False)
+            self.materials_btn.setText("Открыть материал этапа")
+            return
+
+        module_index = self._current_module_index()
+        if not module_index:
+            self.materials_label.setText("Материал этапа: —")
+            self.materials_btn.setEnabled(False)
+            return
+
+        try:
+            payload = self.material_service.list_materials(
+                self.actor_user.id,
+                self.course_id,
+                module_index=module_index,
+            )
+            material = payload.get("current_module", {}).get("material")
+            self._current_material = material
+            if material:
+                display_name = material.get("display_name", material["original_name"])
+                self.materials_label.setText(f"Этап {module_index}: {display_name}")
+                is_quiz = material.get("content_kind") == "quiz"
+                self.materials_btn.setEnabled(
+                    not is_quiz or not self.actor_user.is_role("employee")
+                )
+                if is_quiz and self.actor_user.is_role("employee"):
+                    self.materials_btn.setText("Тест ниже")
+                else:
+                    self.materials_btn.setText("Открыть материал этапа")
+            else:
+                self._current_material = None
+                self.materials_label.setText(f"Этап {module_index}: материал не прикреплён")
+                self.materials_btn.setEnabled(False)
+                self.materials_btn.setText("Открыть материал этапа")
+        except (PermissionError, ValueError):
+            self._current_material = None
+            self.materials_label.setText("Материал этапа: нет доступа")
+            self.materials_btn.setEnabled(False)
+            self.materials_btn.setText("Открыть материал этапа")
+
+    def _open_materials(self):
+        if not self.material_service:
+            return
+        module_index = self._current_module_index()
+        if not module_index:
+            return
+        try:
+            file_path = self.material_service.get_module_material_path(
+                self.actor_user.id, self.course_id, module_index
+            )
+        except ValueError:
+            open_course_materials_dialog(
+                self,
+                self.actor_user,
+                self.material_service,
+                self.course_id,
+            )
+            return
+        except (PermissionError, ValueError) as exc:
+            QMessageBox.warning(self, "Ошибка", str(exc))
+            return
+
+        if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(file_path))):
+            QMessageBox.warning(self, "Открыть", f"Не удалось открыть файл:\n{file_path}")
+
+    def _on_submit_quiz(self):
+        if not self._quiz_button_groups:
+            return
+
+        answers = []
+        for index, group in enumerate(self._quiz_button_groups, start=1):
+            selected = group.checkedId()
+            if selected < 0:
+                QMessageBox.warning(
+                    self, "Тест", f"Ответьте на вопрос {index}"
+                )
+                return
+            answers.append(selected)
+
+        try:
+            new_progress = self.course_service.submit_module_quiz(
+                self.actor_user.id, self.course_id, answers
+            )
+        except (PermissionError, ValueError) as exc:
+            QMessageBox.warning(self, "Тест не сдан", str(exc))
+            return
+        except Exception as exc:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось сдать тест: {exc}")
+            return
+
+        if self.on_progress:
+            self.on_progress()
+
+        if new_progress >= 100:
+            QMessageBox.information(self, "Готово", "Тест сдан! Курс успешно завершён!")
+        else:
+            QMessageBox.information(self, "Готово", "Тест сдан! Переход к следующему этапу.")
+        self._load_state()
 
     def _on_advance(self):
         try:
@@ -632,11 +1114,14 @@ class CoursePassingDialog(QDialog):
         self._load_state()
 
 
-def open_course_passing_dialog(actor_user, course_service, course_id, parent, on_success=None):
+def open_course_passing_dialog(
+    actor_user, course_service, course_id, parent, material_service=None, on_success=None
+):
     dialog = CoursePassingDialog(
         actor_user,
         course_service,
         course_id,
+        material_service=material_service,
         on_progress=on_success,
         parent=parent,
     )
@@ -644,8 +1129,19 @@ def open_course_passing_dialog(actor_user, course_service, course_id, parent, on
 
 
 class CourseDetailsDialog(QDialog):
-    def __init__(self, course, progress=None, parent=None):
+    def __init__(
+        self,
+        course,
+        progress=None,
+        materials_summary="0/0",
+        actor_user=None,
+        material_service=None,
+        parent=None,
+    ):
         super().__init__(parent)
+        self.actor_user = actor_user
+        self.material_service = material_service
+        self.course_id = course.id
         self.setWindowTitle("Просмотр курса")
         self.setMinimumWidth(500)
 
@@ -653,12 +1149,16 @@ class CourseDetailsDialog(QDialog):
         info = QTextEdit()
         info.setReadOnly(True)
 
+        module_count = getattr(course, "module_count", DEFAULT_MODULES_PER_COURSE) or DEFAULT_MODULES_PER_COURSE
         lines = [
             f"Название: {course.title}",
+            f"Тип курса: {course_type_label(getattr(course, 'course_type', None))}",
             f"Отдел: {course.department.name if course.department else '—'}",
             f"Создатель: {course.creator.full_name if course.creator else '—'}",
+            f"Количество этапов: {module_count}",
             f"Срок прохождения: {course.deadline_days} дн.",
             f"Порог сдачи: {course.pass_threshold}%",
+            f"Материалов: {materials_summary}",
             f"Статус: {'Активен' if course.is_active else 'Неактивен'}",
             f"Создан: {course.created_at.strftime('%d.%m.%Y %H:%M') if course.created_at else '—'}",
         ]
@@ -670,13 +1170,35 @@ class CourseDetailsDialog(QDialog):
         info.setPlainText("\n".join(lines))
         layout.addWidget(info)
 
+        actions = QHBoxLayout()
+        self.materials_btn = QPushButton("Материалы курса")
+        self.materials_btn.clicked.connect(self._open_materials)
+        self.materials_btn.setEnabled(
+            material_service is not None and actor_user is not None
+        )
+        actions.addWidget(self.materials_btn)
+        actions.addStretch()
+        layout.addLayout(actions)
+
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)
         buttons.accepted.connect(self.accept)
         layout.addWidget(buttons)
 
+    def _open_materials(self):
+        if not self.material_service or not self.actor_user:
+            return
+        open_course_materials_dialog(
+            self,
+            self.actor_user,
+            self.material_service,
+            self.course_id,
+        )
 
-def show_course_details(actor_user, course_service, course_id, parent):
+
+def show_course_details(
+    actor_user, course_service, course_id, parent, material_service=None
+):
     try:
         course, progress = course_service.get_course_details(actor_user.id, course_id)
     except PermissionError as exc:
@@ -685,5 +1207,23 @@ def show_course_details(actor_user, course_service, course_id, parent):
     except ValueError as exc:
         QMessageBox.warning(parent, "Ошибка", str(exc))
         return
-    CourseDetailsDialog(course, progress, parent=parent).exec()
+
+    materials_summary = "0/0"
+    if material_service:
+        try:
+            payload = material_service.list_materials(actor_user.id, course_id)
+            materials_summary = (
+                f"{payload['attached_count']}/{payload['module_count']}"
+            )
+        except (PermissionError, ValueError):
+            materials_summary = "0/0"
+
+    CourseDetailsDialog(
+        course,
+        progress,
+        materials_summary=materials_summary,
+        actor_user=actor_user,
+        material_service=material_service,
+        parent=parent,
+    ).exec()
 

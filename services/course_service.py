@@ -1,6 +1,7 @@
 from sqlalchemy.orm import joinedload
 
-from constants import EMPLOYEE_ROLE_ID
+from constants import EMPLOYEE_ROLE_ID, PRACTICE_COURSE_TYPE
+from services.material_service import MaterialService
 from models import User, Department, Course, UserCourse, AuditLog, utc_now
 from utils import (
     course_module_count,
@@ -8,6 +9,9 @@ from utils import (
     current_module_index,
     modules_completed,
     course_pass_status,
+    validate_module_count,
+    validate_course_type,
+    course_type_label,
 )
 
 
@@ -34,9 +38,21 @@ class CourseService:
             ).first() is not None
         return False
 
-    def create_course(self, actor_id, title, description, department_id, deadline_days, pass_threshold):
+    def create_course(
+        self,
+        actor_id,
+        title,
+        description,
+        department_id,
+        deadline_days,
+        pass_threshold,
+        module_count,
+        course_type,
+    ):
         title = title.strip()
         description = description.strip() if description else None
+        module_count = validate_module_count(module_count)
+        course_type = validate_course_type(course_type)
 
         if not title:
             raise ValueError("Введите название курса")
@@ -63,6 +79,8 @@ class CourseService:
                 creator_id=actor.id,
                 deadline_days=deadline_days,
                 pass_threshold=pass_threshold,
+                module_count=module_count,
+                course_type=course_type,
             )
             db.add(course)
             db.flush()
@@ -71,7 +89,8 @@ class CourseService:
                 department_id=department_id,
                 action="create_course",
                 details=(
-                    f"Создан курс: {course.title} | отдел: {department.name} | "
+                    f"Создан курс: {course.title} | тип: {course_type_label(course_type)} | "
+                    f"отдел: {department.name} | этапов: {module_count} | "
                     f"срок: {deadline_days} дн. | порог: {pass_threshold}%"
                 ),
             ))
@@ -269,10 +288,20 @@ class CourseService:
             course, enrollment = self._get_employee_enrollment(db, actor, course_id)
             module_count = course_module_count(course)
             progress = float(enrollment.progress or 0)
+            current_module = current_module_index(progress, module_count)
+            is_practice = course.course_type == PRACTICE_COURSE_TYPE
+            module_quiz = None
+            if is_practice and progress < 100:
+                module_quiz = MaterialService(self.db_manager).get_module_quiz(
+                    actor_id, course_id, current_module
+                )
+
             return {
                 "course_id": course.id,
                 "title": course.title,
                 "description": course.description,
+                "course_type": course.course_type,
+                "is_practice": is_practice,
                 "pass_threshold": course.pass_threshold,
                 "deadline_days": course.deadline_days,
                 "department_name": course.department.name if course.department else "—",
@@ -280,12 +309,66 @@ class CourseService:
                 "started_at": enrollment.started_at,
                 "completed_at": enrollment.completed_at,
                 "module_count": module_count,
-                "current_module": current_module_index(progress, module_count),
+                "current_module": current_module,
                 "modules_completed": modules_completed(progress, module_count),
                 "is_completed": progress >= 100,
                 "can_advance": progress < 100,
                 "status": course_pass_status(progress, course.pass_threshold),
+                "module_quiz": module_quiz,
             }
+
+    def submit_module_quiz(self, actor_id, course_id, answers):
+        if not isinstance(answers, list):
+            raise ValueError("Некорректные ответы теста")
+
+        with self.db_manager.session_scope() as db:
+            actor = db.query(User).filter(User.id == actor_id).first()
+            if not actor:
+                raise ValueError("Пользователь не найден")
+            course, enrollment = self._get_employee_enrollment(db, actor, course_id)
+            if course.course_type != PRACTICE_COURSE_TYPE:
+                raise ValueError("Тестирование доступно только для курсов типа «Практика»")
+            if enrollment.progress >= 100:
+                raise ValueError("Курс уже завершён")
+
+            module_count = course_module_count(course)
+            module_index = current_module_index(float(enrollment.progress or 0), module_count)
+            quiz_questions = MaterialService(self.db_manager).get_module_quiz_answers(
+                db, course_id, module_index
+            )
+            if not quiz_questions:
+                raise ValueError(
+                    f"Для этапа {module_index} не загружен файл с вопросами и ответами"
+                )
+            if len(answers) != len(quiz_questions):
+                raise ValueError("Ответьте на все вопросы теста")
+
+            correct = 0
+            for index, question in enumerate(quiz_questions):
+                selected = answers[index]
+                if not isinstance(selected, int):
+                    raise ValueError("Некорректный формат ответа")
+                if not 0 <= selected < len(question["options"]):
+                    raise ValueError(f"Некорректный ответ на вопрос {index + 1}")
+                if selected == question["correct_index"]:
+                    correct += 1
+
+            score_percent = correct / len(quiz_questions) * 100
+            if score_percent < course.pass_threshold:
+                raise ValueError(
+                    f"Тест не сдан: {score_percent:.0f}% "
+                    f"({correct}/{len(quiz_questions)}). "
+                    f"Нужно: {course.pass_threshold}%"
+                )
+
+            return self._advance_enrollment(
+                db, actor, course, enrollment, module_count,
+                quiz_details=(
+                    f"Сдан тест этапа {module_index} курса «{course.title}» | "
+                    f"результат: {score_percent:.0f}% ({correct}/{len(quiz_questions)})"
+                ),
+                quiz_action="complete_module_quiz",
+            )
 
     def advance_module(self, actor_id, course_id):
         with self.db_manager.session_scope() as db:
@@ -295,38 +378,57 @@ class CourseService:
             course, enrollment = self._get_employee_enrollment(db, actor, course_id)
             if enrollment.progress >= 100:
                 raise ValueError("Курс уже завершён")
+            if course.course_type == PRACTICE_COURSE_TYPE:
+                raise ValueError(
+                    "Для курса типа «Практика» необходимо сдать тест текущего этапа"
+                )
 
             module_count = course_module_count(course)
-            step = module_progress_step(module_count)
-            if enrollment.started_at is None:
-                enrollment.started_at = utc_now()
+            return self._advance_enrollment(db, actor, course, enrollment, module_count)
 
-            new_progress = min(100.0, round(float(enrollment.progress or 0) + step, 1))
-            enrollment.progress = new_progress
-            module_no = modules_completed(new_progress, module_count)
+    def _advance_enrollment(
+        self,
+        db,
+        actor,
+        course,
+        enrollment,
+        module_count,
+        quiz_details=None,
+        quiz_action=None,
+    ):
+        step = module_progress_step(module_count)
+        if enrollment.started_at is None:
+            enrollment.started_at = utc_now()
 
-            if new_progress >= 100:
-                enrollment.completed_at = utc_now()
-                details = (
-                    f"Завершён курс: {course.title} | прогресс: 100% | "
-                    f"модулей: {module_count}"
-                )
-                action = "complete_course"
-            else:
-                details = (
-                    f"Пройден модуль {module_no}/{module_count} курса «{course.title}» | "
-                    f"прогресс: {new_progress:.0f}%"
-                )
-                action = "complete_module"
+        new_progress = min(100.0, round(float(enrollment.progress or 0) + step, 1))
+        enrollment.progress = new_progress
+        module_no = modules_completed(new_progress, module_count)
 
-            db.add(AuditLog(
-                user_id=actor.id,
-                department_id=actor.department_id,
-                action=action,
-                details=details,
-            ))
-            db.commit()
-            return new_progress
+        if new_progress >= 100:
+            enrollment.completed_at = utc_now()
+            details = (
+                f"Завершён курс: {course.title} | прогресс: 100% | "
+                f"этапов: {module_count}"
+            )
+            action = "complete_course"
+        elif quiz_details:
+            details = quiz_details
+            action = quiz_action or "complete_module"
+        else:
+            details = (
+                f"Пройден этап {module_no}/{module_count} курса «{course.title}» | "
+                f"прогресс: {new_progress:.0f}%"
+            )
+            action = "complete_module"
+
+        db.add(AuditLog(
+            user_id=actor.id,
+            department_id=actor.department_id,
+            action=action,
+            details=details,
+        ))
+        db.commit()
+        return new_progress
 
     def get_course_details(self, actor_id, course_id):
         with self.db_manager.session_scope() as db:

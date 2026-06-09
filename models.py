@@ -4,7 +4,7 @@ import bcrypt
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, Float
 from sqlalchemy.orm import declarative_base, relationship
 
-from constants import ROLE_CODES
+from constants import ROLE_CODES, DEFAULT_MODULES_PER_COURSE, DEFAULT_COURSE_TYPE
 
 Base = declarative_base()
 
@@ -89,12 +89,36 @@ class Course(Base):
     creator_id = Column(Integer, ForeignKey('users.id'), nullable=False)
     deadline_days = Column(Integer, default=30)
     pass_threshold = Column(Integer, default=80)
+    module_count = Column(Integer, default=DEFAULT_MODULES_PER_COURSE, nullable=False)
+    course_type = Column(String(30), default=DEFAULT_COURSE_TYPE, nullable=False)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=utc_now)
 
     department = relationship("Department", back_populates="courses")
     creator = relationship("User", back_populates="created_courses", foreign_keys=[creator_id])
     user_courses = relationship("UserCourse", back_populates="course")
+    materials = relationship(
+        "CourseMaterial", back_populates="course", cascade="all, delete-orphan"
+    )
+
+
+class CourseMaterial(Base):
+    """Файл, прикреплённый к курсу"""
+    __tablename__ = 'course_materials'
+
+    id = Column(Integer, primary_key=True)
+    course_id = Column(Integer, ForeignKey('courses.id'), nullable=False)
+    module_index = Column(Integer, nullable=False, default=1)
+    original_name = Column(String(255), nullable=False)
+    stored_name = Column(String(255), nullable=False)
+    file_size = Column(Integer, nullable=False, default=0)
+    content_kind = Column(String(20), nullable=False, default="file")
+    quiz_data = Column(Text, nullable=True)
+    uploaded_by_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    created_at = Column(DateTime, default=utc_now)
+
+    course = relationship("Course", back_populates="materials")
+    uploaded_by = relationship("User")
 
 
 class UserCourse(Base):

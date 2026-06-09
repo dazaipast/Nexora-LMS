@@ -20,7 +20,9 @@ from constants import (
     DEPT_EMPLOYEE_STATS_HEADERS,
     PROBLEM_EMPLOYEE_HEADERS,
 )
-from models import User
+from sqlalchemy import func
+
+from models import User, CourseMaterial
 from utils import (
     format_percent,
     query_user_progress_map,
@@ -55,6 +57,7 @@ class AdminDashboardWidget(
         audit_service,
         stats_service,
         report_service,
+        material_service,
     ):
         super().__init__()
         self.actor_user = actor_user
@@ -64,6 +67,7 @@ class AdminDashboardWidget(
         self.audit_service = audit_service
         self.stats_service = stats_service
         self.report_service = report_service
+        self.material_service = material_service
         self._init_ui()
         self._load_data()
     
@@ -354,11 +358,26 @@ class AdminDashboardWidget(
                 .all()
             )
             fill_users_table(self.users_table, users)
+            courses = self.course_service.list_courses(self.actor_user.id, db=db)
             fill_courses_table(
                 self.courses_table,
-                self.course_service.list_courses(self.actor_user.id, db=db),
+                courses,
+                self._material_counts(db, courses),
             )
             self._refresh_audit_widgets(db)
+
+    @staticmethod
+    def _material_counts(db, courses):
+        if not courses:
+            return {}
+        course_ids = [course.id for course in courses]
+        rows = (
+            db.query(CourseMaterial.course_id, func.count(CourseMaterial.id))
+            .filter(CourseMaterial.course_id.in_(course_ids))
+            .group_by(CourseMaterial.course_id)
+            .all()
+        )
+        return {course_id: count for course_id, count in rows}
 
 class DepartmentHeadDashboardWidget(
     StatCardMixin, CoursesPanelMixin, AuditPanelMixin, QuickActionsMixin, QWidget
@@ -374,6 +393,7 @@ class DepartmentHeadDashboardWidget(
         audit_service,
         stats_service,
         report_service,
+        material_service,
     ):
         super().__init__()
         self.actor_user = actor_user
@@ -383,6 +403,7 @@ class DepartmentHeadDashboardWidget(
         self.audit_service = audit_service
         self.stats_service = stats_service
         self.report_service = report_service
+        self.material_service = material_service
         self.course_fixed_department_id = actor_user.department_id
         self._init_ui()
         self._load_data()
@@ -645,9 +666,11 @@ class DepartmentHeadDashboardWidget(
                     row_index, 4, QTableWidgetItem(str(row["assigned_courses"]))
                 )
 
+            courses = self.course_service.list_courses(self.actor_user.id, db=db)
             fill_courses_table(
                 self.courses_table,
-                self.course_service.list_courses(self.actor_user.id, db=db),
+                courses,
+                AdminDashboardWidget._material_counts(db, courses),
             )
             self._refresh_audit_widgets(db)
 

@@ -1,9 +1,24 @@
 import csv
 from datetime import datetime
+from pathlib import Path
 
 from sqlalchemy import func
 
-from constants import MODULES_PER_COURSE, AUDIT_ACTION_LABELS, EVENT_ACTION_ICONS
+from constants import (
+    MODULES_PER_COURSE,
+    DEFAULT_MODULES_PER_COURSE,
+    MIN_MODULES_PER_COURSE,
+    MAX_MODULES_PER_COURSE,
+    AUDIT_ACTION_LABELS,
+    EVENT_ACTION_ICONS,
+    ALLOWED_MATERIAL_EXTENSIONS,
+    MAX_MATERIAL_SIZE_BYTES,
+    COURSE_TYPES,
+    DEFAULT_COURSE_TYPE,
+    PROGRESS_GROUP_ADAPTATION,
+    PROGRESS_GROUP_GENERAL,
+    PROGRESS_GROUP_PROFESSIONAL,
+)
 from models import User, UserCourse, Department
 
 
@@ -36,21 +51,78 @@ def query_user_progress_map(db, user_ids):
     return {user_id: float(progress) for user_id, progress in rows}
 
 
+def course_type_label(course_type):
+    info = COURSE_TYPES.get(course_type or DEFAULT_COURSE_TYPE)
+    if not info:
+        info = COURSE_TYPES[DEFAULT_COURSE_TYPE]
+    return info["label"]
+
+
+def course_progress_group(course):
+    if not course:
+        return PROGRESS_GROUP_PROFESSIONAL
+    course_type = getattr(course, "course_type", None) or DEFAULT_COURSE_TYPE
+    info = COURSE_TYPES.get(course_type, COURSE_TYPES[DEFAULT_COURSE_TYPE])
+    return info["progress_group"]
+
+
+def validate_course_type(course_type):
+    if course_type not in COURSE_TYPES:
+        labels = ", ".join(info["label"] for info in COURSE_TYPES.values())
+        raise ValueError(f"Выберите тип курса: {labels}")
+    return course_type
+
+
+def infer_course_type_from_title(title):
+    lowered = (title or "").lower()
+    if "адаптация" in lowered:
+        return "adaptation"
+    if any(keyword in lowered for keyword in ("услуг", "битрикс", "знан")):
+        return "general_knowledge"
+    if "возражен" in lowered:
+        return "objection_handling"
+    if "практик" in lowered or "продаж" in lowered:
+        return "practice"
+    return DEFAULT_COURSE_TYPE
+
+
 def split_employee_progress(user_courses):
-    adapt, know, skill = [], [], []
+    groups = {
+        PROGRESS_GROUP_ADAPTATION: [],
+        PROGRESS_GROUP_GENERAL: [],
+        PROGRESS_GROUP_PROFESSIONAL: [],
+    }
     for uc in user_courses:
-        title = (uc.course.title if uc.course else "").lower()
-        if "адаптация" in title:
-            adapt.append(uc.progress)
-        elif any(keyword in title for keyword in ("услуг", "битрикс", "знан")):
-            know.append(uc.progress)
-        else:
-            skill.append(uc.progress)
-    return int(avg_progress(adapt)), int(avg_progress(know)), int(avg_progress(skill))
+        groups[course_progress_group(uc.course)].append(uc.progress)
+    return (
+        int(avg_progress(groups[PROGRESS_GROUP_ADAPTATION])),
+        int(avg_progress(groups[PROGRESS_GROUP_GENERAL])),
+        int(avg_progress(groups[PROGRESS_GROUP_PROFESSIONAL])),
+    )
 
 
-def course_module_count(_course=None):
-    return MODULES_PER_COURSE
+def course_module_count(course=None):
+    if course is None:
+        return DEFAULT_MODULES_PER_COURSE
+    count = getattr(course, "module_count", None)
+    return count if count else DEFAULT_MODULES_PER_COURSE
+
+
+def validate_module_count(module_count):
+    value = int(module_count)
+    if not MIN_MODULES_PER_COURSE <= value <= MAX_MODULES_PER_COURSE:
+        raise ValueError(
+            f"Количество этапов должно быть от {MIN_MODULES_PER_COURSE} "
+            f"до {MAX_MODULES_PER_COURSE}"
+        )
+    return value
+
+
+def validate_module_index(module_index, module_count):
+    value = int(module_index)
+    if not 1 <= value <= module_count:
+        raise ValueError(f"Этап должен быть от 1 до {module_count}")
+    return value
 
 
 def module_progress_step(module_count=None):
@@ -83,10 +155,10 @@ def build_module_content(course, module_index, module_count):
     ]
     topic = topics[(module_index - 1) % len(topics)]
     return (
-        f"Модуль {module_index} из {module_count}: {topic}\n\n"
+        f"Этап {module_index} из {module_count}: {topic}\n\n"
         f"{description}\n\n"
-        f"Задание: изучите материал и нажмите «Завершить модуль», "
-        f"чтобы перейти к следующему этапу."
+        f"Задание: изучите материал этапа и нажмите «Завершить этап», "
+        f"чтобы перейти дальше."
     )
 
 
@@ -160,6 +232,45 @@ def save_csv_report(file_path, title, actor_name, sections):
             for row in section["rows"]:
                 writer.writerow(row)
             writer.writerow([])
+
+
+def format_file_size(size_bytes):
+    size = float(size_bytes or 0)
+    if size < 1024:
+        return f"{int(size)} Б"
+    if size < 1024 * 1024:
+        return f"{size / 1024:.1f} КБ"
+    return f"{size / (1024 * 1024):.1f} МБ"
+
+
+def material_extension(path):
+    return Path(path).suffix.lower()
+
+
+def is_allowed_material_file(path):
+    return material_extension(path) in ALLOWED_MATERIAL_EXTENSIONS
+
+
+def validate_material_file(path):
+    file_path = Path(path)
+    if not file_path.is_file():
+        raise ValueError(f"Файл не найден: {file_path.name}")
+    extension = material_extension(file_path)
+    if extension not in ALLOWED_MATERIAL_EXTENSIONS:
+        allowed = ", ".join(sorted(ALLOWED_MATERIAL_EXTENSIONS))
+        raise ValueError(
+            f"Формат «{extension or 'без расширения'}» не поддерживается.\n"
+            f"Допустимые форматы: {allowed}"
+        )
+    size = file_path.stat().st_size
+    if size > MAX_MATERIAL_SIZE_BYTES:
+        raise ValueError(
+            f"Файл «{file_path.name}» слишком большой "
+            f"({format_file_size(size)}). Максимум: {format_file_size(MAX_MATERIAL_SIZE_BYTES)}"
+        )
+    if size == 0:
+        raise ValueError(f"Файл «{file_path.name}» пустой")
+    return size
 
 
 def load_departments_for_actor(db, actor_user, fixed_department_id=None):

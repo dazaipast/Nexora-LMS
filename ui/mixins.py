@@ -22,6 +22,7 @@ from ui.dialogs import (
     deactivate_selected_course,
     show_course_details,
     offer_assign_after_create,
+    open_course_materials_dialog,
 )
 
 class StatCardMixin:
@@ -129,11 +130,14 @@ class CoursesPanelMixin:
         view_btn.clicked.connect(self._open_view_course_dialog)
         assign_btn = QPushButton("Назначить обучение")
         assign_btn.clicked.connect(self._open_assign_course_dialog)
+        materials_btn = QPushButton("Материалы")
+        materials_btn.clicked.connect(self._open_course_materials_dialog)
         delete_btn = QPushButton("Удалить")
         delete_btn.clicked.connect(self._deactivate_selected_course)
         actions.addWidget(create_btn)
         actions.addWidget(view_btn)
         actions.addWidget(assign_btn)
+        actions.addWidget(materials_btn)
         actions.addWidget(delete_btn)
         actions.addStretch()
         layout.addLayout(actions)
@@ -178,5 +182,24 @@ class CoursesPanelMixin:
         if not course_id:
             QMessageBox.information(self, "Просмотр", "Выберите курс в таблице")
             return
-        show_course_details(self.actor_user, self.course_service, course_id, self)
+        show_course_details(
+            self.actor_user,
+            self.course_service,
+            course_id,
+            self,
+            material_service=self.material_service,
+        )
+
+    def _open_course_materials_dialog(self):
+        course_id = get_selected_row_id(self.courses_table)
+        if not course_id:
+            QMessageBox.information(self, "Материалы", "Выберите курс в таблице")
+            return
+        open_course_materials_dialog(
+            self,
+            self.actor_user,
+            self.material_service,
+            course_id,
+            on_change=self._load_data,
+        )
 
