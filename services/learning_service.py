@@ -51,6 +51,24 @@ class LearningService:
         with self.db_manager.session_scope() as db:
             return self._build_recommendations(self._get_enrollments(db, actor_id, active_only=True))
 
+    def get_dashboard_data(self, actor_id, db=None):
+        if db is None:
+            with self.db_manager.session_scope() as session:
+                return self.get_dashboard_data(actor_id, db=session)
+        return self.build_dashboard_snapshot(self._get_enrollments(db, actor_id))
+
+    def build_dashboard_snapshot(self, enrollments):
+        active_enrollments = [
+            enrollment for enrollment in enrollments
+            if enrollment.course and enrollment.course.is_active
+        ]
+        return {
+            "history": self._serialize_history(enrollments),
+            "today": self._build_today_tasks(active_enrollments),
+            "recommendations": self._build_recommendations(active_enrollments),
+            "active_enrollments": active_enrollments,
+        }
+
     def _serialize_history(self, enrollments):
         rows = []
         for enrollment in enrollments:

@@ -1,4 +1,3 @@
-from sqlalchemy.orm import joinedload
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget,
     QTableWidgetItem, QMessageBox, QListWidget, QProgressBar, QSizePolicy,
@@ -6,7 +5,6 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 
 from constants import HISTORY_HEADERS
-from models import User, UserCourse, Course
 from utils import format_percent, course_pass_status, split_employee_progress, course_type_label
 from ui.table_helpers import (
     configure_readonly_table,
@@ -220,34 +218,18 @@ class EmployeeLearningWidget(QWidget):
 
     def _load_data(self):
         with self.db_manager.session_scope() as db:
-            user = (
-                db.query(User)
-                .options(joinedload(User.department))
-                .filter(User.id == self.actor_user.id)
-                .first()
-            )
-            if user:
-                first_name = user.full_name.split(maxsplit=1)[0]
-                self.welcome_label.setText(f"Добрый день, {first_name}!")
-                self.dept_label.setText(
-                    f"{user.position}  ·  "
-                    f"{user.department.name if user.department else '—'}"
-                )
-
-            user_courses = (
-                db.query(UserCourse)
-                .options(joinedload(UserCourse.course))
-                .join(Course, UserCourse.course_id == Course.id)
-                .filter(
-                    UserCourse.user_id == self.actor_user.id,
-                    Course.is_active.is_(True),
-                )
-                .all()
+            user = self.actor_user
+            first_name = user.full_name.split(maxsplit=1)[0]
+            self.welcome_label.setText(f"Добрый день, {first_name}!")
+            self.dept_label.setText(
+                f"{user.position}  ·  "
+                f"{user.department.name if user.department else '—'}"
             )
 
-            active_courses = [
-                uc for uc in user_courses if uc.course and uc.course.is_active
-            ]
+            enrollments = self.learning_service._get_enrollments(db, self.actor_user.id)
+            dashboard = self.learning_service.build_dashboard_snapshot(enrollments)
+            active_courses = dashboard["active_enrollments"]
+
             self.courses_table.setRowCount(len(active_courses))
             for row, uc in enumerate(active_courses):
                 title_item = QTableWidgetItem(uc.course.title)
@@ -271,15 +253,6 @@ class EmployeeLearningWidget(QWidget):
             self.know_progress.setValue(know)
             self.skill_progress.setValue(skill)
 
-            fill_text_list(
-                self.today_list,
-                self.learning_service.get_today_tasks(self.actor_user.id, db=db),
-            )
-            fill_text_list(
-                self.recommendations_list,
-                self.learning_service.get_recommendations(self.actor_user.id, db=db),
-            )
-            fill_history_table(
-                self.history_table,
-                self.learning_service.get_learning_history(self.actor_user.id, db=db),
-            )
+            fill_text_list(self.today_list, dashboard["today"])
+            fill_text_list(self.recommendations_list, dashboard["recommendations"])
+            fill_history_table(self.history_table, dashboard["history"])

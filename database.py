@@ -41,6 +41,7 @@ class DatabaseManager:
         self._run_migrations()
 
         Base.metadata.create_all(bind=self.engine)
+        self._ensure_indexes()
         MATERIALS_DIR.mkdir(parents=True, exist_ok=True)
         self.materials_dir = MATERIALS_DIR
         self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
@@ -108,6 +109,26 @@ class DatabaseManager:
             print("Миграция выполнена успешно!")
         except Exception as exc:
             print(f"Ошибка миграции БД: {exc}")
+
+    def _ensure_indexes(self):
+        """Индексы для частых фильтров и JOIN в SQLite."""
+        index_statements = [
+            "CREATE INDEX IF NOT EXISTS ix_users_department_id ON users (department_id)",
+            "CREATE INDEX IF NOT EXISTS ix_users_role_id ON users (role_id)",
+            "CREATE INDEX IF NOT EXISTS ix_users_is_active ON users (is_active)",
+            "CREATE INDEX IF NOT EXISTS ix_courses_department_id ON courses (department_id)",
+            "CREATE INDEX IF NOT EXISTS ix_courses_is_active ON courses (is_active)",
+            "CREATE INDEX IF NOT EXISTS ix_user_courses_user_id ON user_courses (user_id)",
+            "CREATE INDEX IF NOT EXISTS ix_user_courses_course_id ON user_courses (course_id)",
+            "CREATE INDEX IF NOT EXISTS ix_audit_logs_department_id ON audit_logs (department_id)",
+            "CREATE INDEX IF NOT EXISTS ix_audit_logs_created_at ON audit_logs (created_at)",
+        ]
+        try:
+            with self.engine.begin() as conn:
+                for statement in index_statements:
+                    conn.execute(text(statement))
+        except Exception as exc:
+            print(f"Ошибка создания индексов БД: {exc}")
 
     def _migrate_course_types(self):
         """Определяет тип старых курсов по названию, если типы ещё не заданы."""
@@ -261,8 +282,90 @@ class DatabaseManager:
 
                 db.commit()
                 print("Тестовые данные успешно созданы!")
+            self.ensure_demo_users()
         except Exception as e:
             db.rollback()
             print(f"Ошибка при создании тестовых данных: {e}")
+        finally:
+            db.close()
+
+    def ensure_demo_users(self):
+        """Восстанавливает демо-аккаунты, если их удалили при тестировании."""
+        demo_users = [
+            {
+                "email": "n.makanina@rami-clinic.ru",
+                "password": "admin123",
+                "full_name": "Маканина Наталья Николаевна",
+                "position": "Руководитель контакт-центра",
+                "department_id": 1,
+                "role_id": 1,
+                "head_department_id": 1,
+            },
+            {
+                "email": "i.ivanov@rami-clinic.ru",
+                "password": "manager123",
+                "full_name": "Иванов Иван Иванович",
+                "position": "Руководитель отдела сервиса и продаж",
+                "department_id": 2,
+                "role_id": 2,
+                "head_department_id": 2,
+            },
+            {
+                "email": "a.petrova@rami-clinic.ru",
+                "password": "employee123",
+                "full_name": "Петрова Анна Сергеевна",
+                "position": "Менеджер пластической хирургии",
+                "department_id": 2,
+                "role_id": 3,
+                "head_department_id": None,
+            },
+        ]
+        db = self.get_session()
+        try:
+            if db.query(Role).count() == 0:
+                return
+
+            users_by_email = {}
+            for spec in demo_users:
+                user = db.query(User).filter(User.email == spec["email"]).first()
+                if user is None:
+                    user = User(
+                        full_name=spec["full_name"],
+                        email=spec["email"],
+                        position=spec["position"],
+                        department_id=spec["department_id"],
+                        role_id=spec["role_id"],
+                    )
+                    user.set_password(spec["password"])
+                    db.add(user)
+                    db.flush()
+                else:
+                    user.full_name = spec["full_name"]
+                    user.position = spec["position"]
+                    user.department_id = spec["department_id"]
+                    user.role_id = spec["role_id"]
+                    user.is_active = True
+                    user.set_password(spec["password"])
+                users_by_email[spec["email"]] = user
+
+            admin = users_by_email["n.makanina@rami-clinic.ru"]
+            manager = users_by_email["i.ivanov@rami-clinic.ru"]
+            employee = users_by_email["a.petrova@rami-clinic.ru"]
+            manager.manager_id = admin.id
+            employee.manager_id = manager.id
+
+            for spec in demo_users:
+                if spec["head_department_id"] is None:
+                    continue
+                dept = db.query(Department).filter(
+                    Department.id == spec["head_department_id"]
+                ).first()
+                if dept:
+                    dept.head_id = users_by_email[spec["email"]].id
+
+            db.commit()
+        except Exception as exc:
+            db.rollback()
+            print(f"Ошибка восстановления демо-аккаунтов: {exc}")
         finally:
             db.close()

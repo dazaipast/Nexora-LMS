@@ -1,4 +1,5 @@
 from sqlalchemy.orm import joinedload
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget,
     QTableWidgetItem, QMessageBox, QGroupBox, QDialog,
@@ -23,7 +24,6 @@ from sqlalchemy import func
 from models import User, CourseMaterial
 from utils import (
     format_percent,
-    query_user_progress_map,
 )
 from ui.mixins import StatCardMixin, QuickActionsMixin, AuditPanelMixin, CoursesPanelMixin
 from ui.table_helpers import (
@@ -337,14 +337,15 @@ class AdminDashboardWidget(
                 self.stats_service.get_course_stats(db),
                 include_department=True,
             )
+            employee_stats = self.stats_service.get_employee_stats(db)
             fill_employee_stats_table(
                 self.admin_employee_stats_table,
-                self.stats_service.get_employee_stats(db),
+                employee_stats,
                 include_department=True,
             )
             fill_problem_employees_table(
                 self.problem_employees_table,
-                self.stats_service.get_problem_employees(db),
+                [row for row in employee_stats if row["needs_help"]],
             )
 
             users = (
@@ -611,18 +612,14 @@ class DepartmentHeadDashboardWidget(
 
     def _load_data(self):
         with self.db_manager.session_scope() as db:
-            user = (
-                db.query(User)
-                .options(joinedload(User.department))
-                .filter(User.id == self.actor_user.id)
-                .first()
-            )
-            if not user or not user.department:
+            dept_id = self.actor_user.department_id
+            if not dept_id:
                 return
 
-            dept_id = user.department_id
-
-            summary = self.stats_service.get_department_summary(db, dept_id)
+            employee_stats = self.stats_service.get_employee_stats(db, department_id=dept_id)
+            summary = self.stats_service.get_department_summary(
+                db, dept_id, employee_stats=employee_stats
+            )
             self.emp_count.setText(str(summary["employees"]))
             self.learning_count.setText(str(summary["learning_count"]))
             self.course_count.setText(str(summary["active_courses"]))
@@ -640,10 +637,8 @@ class DepartmentHeadDashboardWidget(
                 .order_by(User.full_name)
                 .all()
             )
-            employee_stats = self.stats_service.get_employee_stats(db, department_id=dept_id)
-            progress_map = query_user_progress_map(db, [emp.id for emp in employees])
             fill_employees_table(
-                self.employees_table, employees, progress_map, employee_stats=employee_stats
+                self.employees_table, employees, {}, employee_stats=employee_stats
             )
 
             course_stats = self.stats_service.get_course_stats(db, department_id=dept_id)
@@ -651,7 +646,7 @@ class DepartmentHeadDashboardWidget(
             fill_course_stats_table(self.dept_stats_course_table, course_stats)
             fill_employee_stats_table(self.dept_employee_stats_table, employee_stats)
 
-            problem_rows = self.stats_service.get_problem_employees(db, department_id=dept_id)
+            problem_rows = [row for row in employee_stats if row["needs_help"]]
             self.dept_problem_table.setRowCount(len(problem_rows))
             for row_index, row in enumerate(problem_rows):
                 self.dept_problem_table.setItem(row_index, 0, QTableWidgetItem(row["full_name"]))

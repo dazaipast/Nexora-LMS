@@ -25,7 +25,7 @@ class ReportService:
             dept_rows = self.stats_service.get_department_rows(db)
             course_rows = self.stats_service.get_course_stats(db)
             employee_rows = self.stats_service.get_employee_stats(db)
-            problem_rows = self.stats_service.get_problem_employees(db)
+            problem_rows = [row for row in employee_rows if row["needs_help"]]
 
             sections = [
                 {
@@ -124,7 +124,7 @@ class ReportService:
             summary = self.stats_service.get_department_summary(db, dept_id)
             course_rows = self.stats_service.get_course_stats(db, department_id=dept_id)
             employee_rows = self.stats_service.get_employee_stats(db, department_id=dept_id)
-            problem_rows = self.stats_service.get_problem_employees(db, department_id=dept_id)
+            problem_rows = [row for row in employee_rows if row["needs_help"]]
 
             sections = [
                 {

@@ -112,12 +112,13 @@ class AuditPanelMixin:
         return tab
 
     def _refresh_audit_widgets(self, db):
+        from constants import EVENT_FEED_LIMIT
+
         logs = self.audit_service.list_logs(self.actor_user.id, db=db)
         fill_audit_table(self.audit_table, logs)
         events_list = getattr(self, "events_list", None)
         if events_list is not None:
-            events = self.audit_service.list_recent_events(self.actor_user.id, db=db)
-            fill_events_list(events_list, events)
+            fill_events_list(events_list, logs[:EVENT_FEED_LIMIT])
 
 
 class CoursesPanelMixin:
