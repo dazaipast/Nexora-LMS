@@ -1,10 +1,8 @@
 from sqlalchemy.orm import joinedload
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget,
-    QTableWidgetItem, QTabWidget, QMessageBox, QGroupBox, QDialog,
+    QTableWidgetItem, QMessageBox, QGroupBox, QDialog,
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
 
 from constants import (
     ROLE_NAMES,
@@ -39,11 +37,10 @@ from ui.table_helpers import (
     fill_problem_employees_table,
     get_selected_user_id,
 )
-from ui.dialogs import (
-    ChangeDepartmentDialog,
-    AddUserDialog,
-    confirm_deactivate_user,
-)
+from ui.sidebar import SidebarNav, SidebarTabProxy
+from ui.widgets import create_section_panel, create_stat_grid
+from ui.style_helpers import styled_widget
+from ui.dialogs import AddUserDialog, ChangeDepartmentDialog, confirm_deactivate_user
 
 class AdminDashboardWidget(
     StatCardMixin, CoursesPanelMixin, AuditPanelMixin, QuickActionsMixin, QWidget
@@ -58,6 +55,7 @@ class AdminDashboardWidget(
         stats_service,
         report_service,
         material_service,
+        header_widget=None,
     ):
         super().__init__()
         self.actor_user = actor_user
@@ -68,83 +66,35 @@ class AdminDashboardWidget(
         self.stats_service = stats_service
         self.report_service = report_service
         self.material_service = material_service
+        self._header_widget = header_widget
         self._init_ui()
         self._load_data()
     
     def _init_ui(self):
+        styled_widget(self, "pageRoot")
         layout = QVBoxLayout(self)
-        title = QLabel("ПАНЕЛЬ УПРАВЛЕНИЯ КЛИНИКОЙ")
-        title.setFont(QFont("Arial", 16, QFont.Weight.Bold))
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(title)
-        
-        self.tabs = QTabWidget()
-        self.tabs.addTab(self._create_overview_tab(), "Обзор")
-        self.tabs.addTab(self._create_statistics_tab(), "Статистика")
-        self.tabs.addTab(self._create_users_tab(), "Пользователи")
-        self.tabs.addTab(self._create_courses_tab(), "Курсы")
-        self.tabs.addTab(self._create_audit_tab(), "Журнал")
-        layout.addWidget(self.tabs)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        self.sidebar = SidebarNav(
+            [
+                ("Обзор", self._create_overview_tab()),
+                ("Статистика", self._create_statistics_tab()),
+                ("Пользователи", self._create_users_tab()),
+                ("Курсы", self._create_courses_tab()),
+                ("Журнал", self._create_audit_tab()),
+            ],
+            brand="LearnMate Core",
+            subtitle="Администрирование",
+            header_widget=self._header_widget,
+        )
+        self.tabs = SidebarTabProxy(self.sidebar)
+        layout.addWidget(self.sidebar)
     
     def _create_overview_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        
-        stats_group = QGroupBox("ОБЩАЯ СТАТИСТИКА")
-        stats_layout = QVBoxLayout()
-
-        top_stats = QHBoxLayout()
-        self.learning_count = QLabel("0")
-        self.learning_count.setStyleSheet(STAT_VALUE_STYLE.format(color=STAT_COLORS[0]))
-        self.total_employees = QLabel("0")
-        self.total_employees.setStyleSheet(STAT_VALUE_STYLE.format(color=STAT_COLORS[1]))
-        self.managers_count = QLabel("0")
-        self.managers_count.setStyleSheet(STAT_VALUE_STYLE.format(color=STAT_COLORS[2]))
-        top_stats.addWidget(self._create_stat_card(
-            "Обучается", self.learning_count,
-            "Сотрудники с хотя бы одним назначенным курсом",
-        ))
-        top_stats.addWidget(self._create_stat_card(
-            "Сотрудников", self.total_employees,
-            "Все активные сотрудники клиники",
-        ))
-        top_stats.addWidget(self._create_stat_card(
-            "Руководителей", self.managers_count,
-            "Активные руководители подразделений",
-        ))
-        stats_layout.addLayout(top_stats)
-
-        bottom_stats = QHBoxLayout()
-        self.active_courses = QLabel("0")
-        self.active_courses.setStyleSheet(STAT_VALUE_STYLE.format(color=STAT_COLORS[3]))
-        self.avg_progress = QLabel("0%")
-        self.avg_progress.setStyleSheet(STAT_VALUE_STYLE.format(color=STAT_COLORS[0]))
-        self.pass_rate = QLabel("0%")
-        self.pass_rate.setStyleSheet(STAT_VALUE_STYLE.format(color=STAT_COLORS[1]))
-        bottom_stats.addWidget(self._create_stat_card(
-            "Активных курсов", self.active_courses,
-            "Курсы, доступные для назначения сотрудникам",
-        ))
-        bottom_stats.addWidget(self._create_stat_card(
-            "Средний прогресс", self.avg_progress,
-            "Средний процент прохождения по всем назначениям",
-        ))
-        bottom_stats.addWidget(self._create_stat_card(
-            "Успеваемость", self.pass_rate,
-            "Доля назначений, где прогресс ≥ порога сдачи",
-        ))
-        stats_layout.addLayout(bottom_stats)
-
-        stats_group.setLayout(stats_layout)
-        layout.addWidget(stats_group)
-        
-        dept_group = QGroupBox("СТАТИСТИКА ПО ОТДЕЛАМ")
-        dept_layout = QVBoxLayout()
-        self.depts_table = QTableWidget()
-        configure_readonly_table(self.depts_table, DEPT_STATS_HEADERS)
-        dept_layout.addWidget(self.depts_table)
-        dept_group.setLayout(dept_layout)
-        layout.addWidget(dept_group)
+        layout.setSpacing(20)
+        layout.setContentsMargins(0, 4, 0, 0)
 
         layout.addWidget(self._create_quick_actions_group([
             ("Создать курс", self._quick_create_course),
@@ -153,8 +103,54 @@ class AdminDashboardWidget(
             ("Проблемные зоны", self._quick_problem_zones),
         ]))
 
-        layout.addWidget(self._create_events_group())
-        
+        self.learning_count = QLabel("0")
+        self.learning_count.setStyleSheet(STAT_VALUE_STYLE.format(color=STAT_COLORS[0]))
+        self.total_employees = QLabel("0")
+        self.total_employees.setStyleSheet(STAT_VALUE_STYLE.format(color=STAT_COLORS[1]))
+        self.managers_count = QLabel("0")
+        self.managers_count.setStyleSheet(STAT_VALUE_STYLE.format(color=STAT_COLORS[2]))
+        self.active_courses = QLabel("0")
+        self.active_courses.setStyleSheet(STAT_VALUE_STYLE.format(color=STAT_COLORS[3]))
+        self.avg_progress = QLabel("0%")
+        self.avg_progress.setStyleSheet(STAT_VALUE_STYLE.format(color=STAT_COLORS[0]))
+        self.pass_rate = QLabel("0%")
+        self.pass_rate.setStyleSheet(STAT_VALUE_STYLE.format(color=STAT_COLORS[1]))
+
+        layout.addLayout(create_stat_grid([
+            self._create_stat_card(
+                "Обучается", self.learning_count,
+                "Сотрудники с хотя бы одним назначенным курсом",
+            ),
+            self._create_stat_card(
+                "Сотрудников", self.total_employees,
+                "Все активные сотрудники клиники",
+            ),
+            self._create_stat_card(
+                "Руководителей", self.managers_count,
+                "Активные руководители подразделений",
+            ),
+            self._create_stat_card(
+                "Активных курсов", self.active_courses,
+                "Курсы, доступные для назначения сотрудникам",
+            ),
+            self._create_stat_card(
+                "Средний прогресс", self.avg_progress,
+                "Средний процент прохождения по всем назначениям",
+            ),
+            self._create_stat_card(
+                "Успеваемость", self.pass_rate,
+                "Доля назначений, где прогресс ≥ порога сдачи",
+            ),
+        ]))
+
+        dept_panel, dept_layout = create_section_panel()
+        self.depts_table = QTableWidget()
+        configure_readonly_table(self.depts_table, DEPT_STATS_HEADERS)
+        self.depts_table.setMinimumHeight(220)
+        dept_layout.addWidget(self.depts_table)
+        layout.addWidget(dept_panel)
+
+        layout.addStretch()
         return tab
 
     def _quick_create_course(self):
@@ -185,7 +181,7 @@ class AdminDashboardWidget(
         export_row.addStretch()
         layout.addLayout(export_row)
 
-        courses_group = QGroupBox("СТАТИСТИКА ПО КУРСАМ")
+        courses_group = QGroupBox("Статистика по курсам")
         courses_layout = QVBoxLayout()
         self.admin_course_stats_table = QTableWidget()
         configure_readonly_table(self.admin_course_stats_table, ADMIN_COURSE_STATS_HEADERS)
@@ -193,7 +189,7 @@ class AdminDashboardWidget(
         courses_group.setLayout(courses_layout)
         layout.addWidget(courses_group)
 
-        employees_group = QGroupBox("РЕЙТИНГ СОТРУДНИКОВ")
+        employees_group = QGroupBox("Рейтинг сотрудников")
         employees_layout = QVBoxLayout()
         self.admin_employee_stats_table = QTableWidget()
         configure_readonly_table(self.admin_employee_stats_table, EMPLOYEE_STATS_HEADERS)
@@ -201,7 +197,7 @@ class AdminDashboardWidget(
         employees_group.setLayout(employees_layout)
         layout.addWidget(employees_group)
 
-        problems_group = QGroupBox("НУЖНА ПОМОЩЬ (прогресс ниже 65%)")
+        problems_group = QGroupBox("Нужна помощь (прогресс ниже 65%)")
         problems_layout = QVBoxLayout()
         self.problem_employees_table = QTableWidget()
         configure_readonly_table(self.problem_employees_table, PROBLEM_EMPLOYEE_HEADERS)
@@ -394,6 +390,7 @@ class DepartmentHeadDashboardWidget(
         stats_service,
         report_service,
         material_service,
+        header_widget=None,
     ):
         super().__init__()
         self.actor_user = actor_user
@@ -405,73 +402,33 @@ class DepartmentHeadDashboardWidget(
         self.report_service = report_service
         self.material_service = material_service
         self.course_fixed_department_id = actor_user.department_id
+        self._header_widget = header_widget
         self._init_ui()
         self._load_data()
     
     def _init_ui(self):
+        styled_widget(self, "pageRoot")
         layout = QVBoxLayout(self)
-        self.title = QLabel()
-        self.title.setFont(QFont("Arial", 16, QFont.Weight.Bold))
-        self.title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.title)
+        layout.setContentsMargins(0, 0, 0, 0)
 
-        self.tabs = QTabWidget()
-        self.tabs.addTab(self._create_overview_tab(), "Обзор")
-        self.tabs.addTab(self._create_statistics_tab(), "Статистика")
-        self.tabs.addTab(self._create_audit_tab(), "Журнал")
-        layout.addWidget(self.tabs)
+        self.sidebar = SidebarNav(
+            [
+                ("Обзор", self._create_overview_tab()),
+                ("Статистика", self._create_statistics_tab()),
+                ("Журнал", self._create_audit_tab()),
+            ],
+            brand="LearnMate Core",
+            subtitle="Руководитель отдела",
+            header_widget=self._header_widget,
+        )
+        self.tabs = SidebarTabProxy(self.sidebar)
+        layout.addWidget(self.sidebar)
 
     def _create_overview_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
-
-        stats_group = QGroupBox("СТАТИСТИКА ОТДЕЛА")
-        stats_layout = QVBoxLayout()
-
-        top_stats = QHBoxLayout()
-        self.emp_count = QLabel("0")
-        self.emp_count.setStyleSheet(STAT_VALUE_STYLE.format(color=STAT_COLORS[0]))
-        self.learning_count = QLabel("0")
-        self.learning_count.setStyleSheet(STAT_VALUE_STYLE.format(color=STAT_COLORS[1]))
-        self.course_count = QLabel("0")
-        self.course_count.setStyleSheet(STAT_VALUE_STYLE.format(color=STAT_COLORS[2]))
-        top_stats.addWidget(self._create_stat_card(
-            "Сотрудников", self.emp_count,
-            "Активные сотрудники вашего отдела",
-        ))
-        top_stats.addWidget(self._create_stat_card(
-            "Обучается", self.learning_count,
-            "Сотрудники с назначенными курсами",
-        ))
-        top_stats.addWidget(self._create_stat_card(
-            "Курсов", self.course_count,
-            "Активные курсы, созданные для отдела",
-        ))
-        stats_layout.addLayout(top_stats)
-
-        bottom_stats = QHBoxLayout()
-        self.avg_prog = QLabel("0%")
-        self.avg_prog.setStyleSheet(STAT_VALUE_STYLE.format(color=STAT_COLORS[3]))
-        self.pass_rate = QLabel("0%")
-        self.pass_rate.setStyleSheet(STAT_VALUE_STYLE.format(color=STAT_COLORS[0]))
-        self.need_help_count = QLabel("0")
-        self.need_help_count.setStyleSheet(STAT_VALUE_STYLE.format(color=STAT_COLORS[1]))
-        bottom_stats.addWidget(self._create_stat_card(
-            "Средний прогресс", self.avg_prog,
-            "Средний % прохождения курсов в отделе",
-        ))
-        bottom_stats.addWidget(self._create_stat_card(
-            "Успеваемость", self.pass_rate,
-            "Доля назначений с прогрессом ≥ порога сдачи",
-        ))
-        bottom_stats.addWidget(self._create_stat_card(
-            "Нужна помощь", self.need_help_count,
-            "Сотрудники со средним прогрессом ниже 65%",
-        ))
-        stats_layout.addLayout(bottom_stats)
-
-        stats_group.setLayout(stats_layout)
-        layout.addWidget(stats_group)
+        layout.setSpacing(20)
+        layout.setContentsMargins(0, 4, 0, 0)
 
         layout.addWidget(self._create_quick_actions_group([
             ("Создать курс", self._quick_create_course),
@@ -480,23 +437,64 @@ class DepartmentHeadDashboardWidget(
             ("Экспорт CSV", self._quick_export_department_report),
         ]))
 
-        layout.addWidget(self._create_events_group())
+        self.emp_count = QLabel("0")
+        self.emp_count.setStyleSheet(STAT_VALUE_STYLE.format(color=STAT_COLORS[0]))
+        self.learning_count = QLabel("0")
+        self.learning_count.setStyleSheet(STAT_VALUE_STYLE.format(color=STAT_COLORS[1]))
+        self.course_count = QLabel("0")
+        self.course_count.setStyleSheet(STAT_VALUE_STYLE.format(color=STAT_COLORS[2]))
+        self.avg_prog = QLabel("0%")
+        self.avg_prog.setStyleSheet(STAT_VALUE_STYLE.format(color=STAT_COLORS[3]))
+        self.pass_rate = QLabel("0%")
+        self.pass_rate.setStyleSheet(STAT_VALUE_STYLE.format(color=STAT_COLORS[0]))
+        self.need_help_count = QLabel("0")
+        self.need_help_count.setStyleSheet(STAT_VALUE_STYLE.format(color=STAT_COLORS[1]))
 
-        course_stats_group = QGroupBox("УСПЕВАЕМОСТЬ ПО КУРСАМ")
-        course_stats_layout = QVBoxLayout()
+        layout.addLayout(create_stat_grid([
+            self._create_stat_card(
+                "Сотрудников", self.emp_count,
+                "Активные сотрудники вашего отдела",
+            ),
+            self._create_stat_card(
+                "Обучается", self.learning_count,
+                "Сотрудники с назначенными курсами",
+            ),
+            self._create_stat_card(
+                "Курсов", self.course_count,
+                "Активные курсы, созданные для отдела",
+            ),
+            self._create_stat_card(
+                "Средний прогресс", self.avg_prog,
+                "Средний % прохождения курсов в отделе",
+            ),
+            self._create_stat_card(
+                "Успеваемость", self.pass_rate,
+                "Доля назначений с прогрессом ≥ порога сдачи",
+            ),
+            self._create_stat_card(
+                "Нужна помощь", self.need_help_count,
+                "Сотрудники со средним прогрессом ниже 65%",
+            ),
+        ]))
+
+        course_panel, course_layout = create_section_panel()
         self.dept_course_stats_table = QTableWidget()
         configure_readonly_table(self.dept_course_stats_table, COURSE_STATS_HEADERS)
-        course_stats_layout.addWidget(self.dept_course_stats_table)
-        course_stats_group.setLayout(course_stats_layout)
-        layout.addWidget(course_stats_group)
-        
-        emp_group = QGroupBox("СОТРУДНИКИ")
-        emp_layout = QVBoxLayout()
+        self.dept_course_stats_table.setMinimumHeight(140)
+        course_layout.addWidget(self.dept_course_stats_table)
+        layout.addWidget(course_panel)
 
+        emp_panel, emp_layout = create_section_panel()
         actions = QHBoxLayout()
         add_employee_btn = QPushButton("Добавить сотрудника")
+        add_employee_btn.setProperty("class", "actionBtn")
+        add_employee_btn.style().unpolish(add_employee_btn)
+        add_employee_btn.style().polish(add_employee_btn)
         add_employee_btn.clicked.connect(self._open_add_employee_dialog)
         deactivate_btn = QPushButton("Удалить")
+        deactivate_btn.setProperty("class", "actionBtn")
+        deactivate_btn.style().unpolish(deactivate_btn)
+        deactivate_btn.style().polish(deactivate_btn)
         deactivate_btn.clicked.connect(self._deactivate_selected_employee)
         actions.addWidget(add_employee_btn)
         actions.addWidget(deactivate_btn)
@@ -505,17 +503,18 @@ class DepartmentHeadDashboardWidget(
 
         self.employees_table = QTableWidget()
         configure_readonly_table(self.employees_table, DEPT_EMPLOYEE_STATS_HEADERS)
+        self.employees_table.setMinimumHeight(180)
         emp_layout.addWidget(self.employees_table)
-        emp_group.setLayout(emp_layout)
-        layout.addWidget(emp_group)
+        layout.addWidget(emp_panel)
 
-        courses_group = QGroupBox("УПРАВЛЕНИЕ КУРСАМИ")
-        courses_layout = QVBoxLayout()
+        courses_panel, courses_layout = create_section_panel()
         self._add_courses_toolbar(courses_layout)
         self.courses_table = self._create_courses_table()
+        self.courses_table.setMinimumHeight(180)
         courses_layout.addWidget(self.courses_table)
-        courses_group.setLayout(courses_layout)
-        layout.addWidget(courses_group)
+        layout.addWidget(courses_panel)
+
+        layout.addStretch()
         return tab
 
     def _quick_create_course(self):
@@ -549,7 +548,7 @@ class DepartmentHeadDashboardWidget(
         export_row.addStretch()
         layout.addLayout(export_row)
 
-        ranking_group = QGroupBox("РЕЙТИНГ СОТРУДНИКОВ ОТДЕЛА")
+        ranking_group = QGroupBox("Рейтинг сотрудников отдела")
         ranking_layout = QVBoxLayout()
         self.dept_employee_stats_table = QTableWidget()
         configure_readonly_table(self.dept_employee_stats_table, DEPT_EMPLOYEE_STATS_HEADERS)
@@ -557,7 +556,7 @@ class DepartmentHeadDashboardWidget(
         ranking_group.setLayout(ranking_layout)
         layout.addWidget(ranking_group)
 
-        courses_group = QGroupBox("ДЕТАЛЬНАЯ СТАТИСТИКА ПО КУРСАМ")
+        courses_group = QGroupBox("Детальная статистика по курсам")
         courses_layout = QVBoxLayout()
         self.dept_stats_course_table = QTableWidget()
         configure_readonly_table(self.dept_stats_course_table, COURSE_STATS_HEADERS)
@@ -565,7 +564,7 @@ class DepartmentHeadDashboardWidget(
         courses_group.setLayout(courses_layout)
         layout.addWidget(courses_group)
 
-        problems_group = QGroupBox("СОТРУДНИКИ, КОТОРЫМ НУЖНА ПОМОЩЬ")
+        problems_group = QGroupBox("Сотрудники, которым нужна помощь")
         problems_layout = QVBoxLayout()
         self.dept_problem_table = QTableWidget()
         configure_readonly_table(
@@ -621,7 +620,6 @@ class DepartmentHeadDashboardWidget(
             if not user or not user.department:
                 return
 
-            self.title.setText(f"УПРАВЛЕНИЕ: {user.department.name.upper()}")
             dept_id = user.department_id
 
             summary = self.stats_service.get_department_summary(db, dept_id)

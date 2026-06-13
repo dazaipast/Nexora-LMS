@@ -59,14 +59,14 @@ COURSE_TABLE_HEADERS = [
     "Название", "Тип", "Отдел", "Создатель", "Этапов", "Срок (дн.)",
     "Порог %", "Материалы", "Статус",
 ]
-STAT_VALUE_STYLE = "font-size: 26px; font-weight: bold; color: {color};"
-STAT_TITLE_STYLE = "font-size: 13px; font-weight: bold; color: #2c3e50;"
-STAT_DESC_STYLE = "font-size: 11px; color: #7f8c8d;"
+STAT_VALUE_STYLE = "font-size: 32px; font-weight: 700; color: {color};"
+STAT_TITLE_STYLE = "font-size: 13px; font-weight: 600; color: #1A2B3C;"
+STAT_DESC_STYLE = "font-size: 11px; color: #6B7C8F;"
 STAT_CARD_STYLE = (
-    "background: #ffffff; border-radius: 8px; padding: 12px; "
-    "margin: 5px; border: 1px solid #bdc3c7;"
+    "background: #FFFFFF; border-radius: 12px; "
+    "border: 1px solid #D8DEE6;"
 )
-STAT_COLORS = ("#3498db", "#2ecc71", "#e74c3c", "#9b59b6")
+STAT_COLORS = ("#0D6E6E", "#2563EB", "#7C3AED", "#2E7D5B")
 
 DEPT_STATS_HEADERS = [
     "Отдел", "Сотрудников", "Обучается", "Курсов", "Прогресс", "Успеваемость",

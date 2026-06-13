@@ -4,12 +4,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 
-from constants import (
-    COURSE_TABLE_HEADERS,
-    STAT_CARD_STYLE,
-    STAT_TITLE_STYLE,
-    STAT_DESC_STYLE,
-)
+from constants import COURSE_TABLE_HEADERS
+from ui.style_helpers import styled_widget
 from ui.table_helpers import (
     configure_readonly_table,
     fill_events_list,
@@ -27,28 +23,27 @@ from ui.dialogs import (
 
 class StatCardMixin:
     def _create_stat_card(self, title, value_label, description=None):
-        card = QWidget()
-        card.setStyleSheet(STAT_CARD_STYLE)
+        card = styled_widget(QWidget(), "statCard")
         layout = QVBoxLayout(card)
         layout.setSpacing(4)
-        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setContentsMargins(20, 18, 20, 18)
 
         title_label = QLabel(title)
-        title_label.setStyleSheet(STAT_TITLE_STYLE)
+        styled_widget(title_label, "statTitle")
         title_label.setWordWrap(True)
         layout.addWidget(title_label)
 
         if description:
             desc_label = QLabel(description)
-            desc_label.setStyleSheet(STAT_DESC_STYLE)
+            styled_widget(desc_label, "statDesc")
             desc_label.setWordWrap(True)
             layout.addWidget(desc_label)
 
+        layout.addStretch()
         value_label.setAlignment(
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom
         )
         layout.addWidget(value_label)
-        layout.addStretch()
         return card
 
 
@@ -60,15 +55,20 @@ class QuickActionsMixin:
                 return
 
     def _create_quick_actions_group(self, actions):
-        group = QGroupBox("БЫСТРЫЕ ДЕЙСТВИЯ")
-        layout = QHBoxLayout()
+        container = QWidget()
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 4)
+        layout.setSpacing(10)
         for label, callback in actions:
             button = QPushButton(label)
+            button.setProperty("class", "headerBtn")
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.style().unpolish(button)
+            button.style().polish(button)
             button.clicked.connect(callback)
             layout.addWidget(button)
         layout.addStretch()
-        group.setLayout(layout)
-        return group
+        return container
 
     def _export_csv_report(self, export_callable, default_filename):
         file_path, _ = QFileDialog.getSaveFileName(
@@ -92,7 +92,7 @@ class QuickActionsMixin:
 
 class AuditPanelMixin:
     def _create_events_group(self):
-        group = QGroupBox("ПОСЛЕДНИЕ СОБЫТИЯ")
+        group = QGroupBox("Последние события")
         layout = QVBoxLayout()
         self.events_list = QListWidget()
         self.events_list.setMaximumHeight(170)
@@ -112,10 +112,12 @@ class AuditPanelMixin:
         return tab
 
     def _refresh_audit_widgets(self, db):
-        events = self.audit_service.list_recent_events(self.actor_user.id, db=db)
         logs = self.audit_service.list_logs(self.actor_user.id, db=db)
-        fill_events_list(self.events_list, events)
         fill_audit_table(self.audit_table, logs)
+        events_list = getattr(self, "events_list", None)
+        if events_list is not None:
+            events = self.audit_service.list_recent_events(self.actor_user.id, db=db)
+            fill_events_list(events_list, events)
 
 
 class CoursesPanelMixin:

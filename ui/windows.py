@@ -1,13 +1,13 @@
 import sys
 
 from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QFormLayout, QLabel, QLineEdit,
-    QPushButton, QMessageBox, QStatusBar,
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
+    QPushButton, QMessageBox, QStatusBar, QFormLayout,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont, QAction
 
 from constants import ROLE_NAMES
+from ui.style_helpers import styled_widget, apply_card_shadow
 from services import (
     UserService,
     CourseService,
@@ -20,48 +20,86 @@ from services import (
 from ui.dashboards import AdminDashboardWidget, DepartmentHeadDashboardWidget
 from ui.employee import EmployeeLearningWidget
 
+
 class LoginWindow(QMainWindow):
     login_success = pyqtSignal()
-    
+
     def __init__(self, auth_manager):
         super().__init__()
         self.auth_manager = auth_manager
-        self.setWindowTitle("LearnMate Core - Вход")
-        self.setFixedSize(400, 350)
+        self.setWindowTitle("LearnMate Core — Вход")
+        self.setFixedSize(920, 520)
         self._init_ui()
-    
+
     def _init_ui(self):
         central = QWidget()
         self.setCentralWidget(central)
-        layout = QVBoxLayout(central)
-        layout.setContentsMargins(40, 40, 40, 40)
-        
-        title = QLabel("LearnMate Core")
-        title.setFont(QFont("Arial", 18, QFont.Weight.Bold))
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(title)
-        
-        subtitle = QLabel("Клиника РАМИ")
-        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(subtitle)
-        layout.addSpacing(30)
-        
-        form = QFormLayout()
+        layout = QHBoxLayout(central)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        brand_panel = styled_widget(QWidget(), "loginBrandPanel")
+        brand_panel.setObjectName("loginBrandPanel")
+        brand_layout = QVBoxLayout(brand_panel)
+        brand_layout.setContentsMargins(40, 48, 40, 48)
+        brand_layout.addStretch()
+
+        brand_title = QLabel("LearnMate Core")
+        brand_title.setProperty("class", "brandTitle")
+        brand_layout.addWidget(brand_title)
+
+        brand_sub = QLabel("Платформа корпоративного обучения")
+        brand_sub.setProperty("class", "brandSubtitle")
+        brand_sub.setWordWrap(True)
+        brand_layout.addWidget(brand_sub)
+
+        brand_tag = QLabel("Обучение · Контроль · Развитие")
+        brand_tag.setProperty("class", "brandSubtitle")
+        brand_layout.addWidget(brand_tag)
+        brand_layout.addStretch()
+
+        form_panel = styled_widget(QWidget(), "loginFormPanel")
+        form_panel.setObjectName("loginFormPanel")
+        form_outer = QVBoxLayout(form_panel)
+        form_outer.setContentsMargins(56, 48, 56, 48)
+        form_outer.addStretch()
+
+        form_card = styled_widget(QWidget(), "loginCard")
+        apply_card_shadow(form_card, blur=28, offset_y=6, alpha=30)
+        form_layout = QVBoxLayout(form_card)
+        form_layout.setSpacing(16)
+        form_layout.setContentsMargins(28, 28, 28, 28)
+
+        heading = QLabel("Вход в систему")
+        heading.setProperty("class", "loginHeading")
+        form_layout.addWidget(heading)
+
         self.email_input = QLineEdit()
-        self.email_input.setPlaceholderText("Введите email")
+        self.email_input.setPlaceholderText("email@company.ru")
         self.password_input = QLineEdit()
-        self.password_input.setPlaceholderText("Введите пароль")
+        self.password_input.setPlaceholderText("Пароль")
         self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
-        form.addRow("Email:", self.email_input)
-        form.addRow("Пароль:", self.password_input)
-        layout.addLayout(form)
-        layout.addSpacing(20)
-        
+        self.password_input.returnPressed.connect(self._attempt_login)
+
+        field_form = QFormLayout()
+        field_form.setSpacing(12)
+        field_form.addRow("Email", self.email_input)
+        field_form.addRow("Пароль", self.password_input)
+        form_layout.addLayout(field_form)
+
         self.login_btn = QPushButton("Войти")
+        self.login_btn.setProperty("class", "primary")
+        self.login_btn.setMinimumHeight(42)
+        self.login_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.login_btn.clicked.connect(self._attempt_login)
-        layout.addWidget(self.login_btn)
-        layout.addStretch()
-    
+        form_layout.addWidget(self.login_btn)
+
+        form_outer.addWidget(form_card, 0, Qt.AlignmentFlag.AlignHCenter)
+        form_outer.addStretch()
+
+        layout.addWidget(brand_panel, 42)
+        layout.addWidget(form_panel, 58)
+
     def _attempt_login(self):
         email = self.email_input.text().strip()
         password = self.password_input.text()
@@ -81,49 +119,79 @@ class MainWindow(QMainWindow):
         self.auth_manager = auth_manager
         self.db_manager = db_manager
         self.current_user = auth_manager.get_current_user()
-        
+
         if not self.current_user:
             QMessageBox.critical(self, "Ошибка", "Пользователь не найден")
             sys.exit(1)
-        
-        self.setWindowTitle(f"LearnMate Core - {self.current_user.full_name}")
-        self.setGeometry(100, 100, 1200, 800)
+
+        self.setWindowTitle(f"LearnMate Core — {self.current_user.full_name}")
+        self.setMinimumSize(1100, 720)
+        self.resize(1280, 800)
         self._init_ui()
-    
+
     def _init_ui(self):
-        self._create_menu()
         self._create_status_bar()
-        self._create_central_widget()
-    
-    def _create_menu(self):
-        menubar = self.menuBar()
-        file_menu = menubar.addMenu("Файл")
-        logout_action = QAction("Выход", self)
-        logout_action.triggered.connect(self._logout)
-        file_menu.addAction(logout_action)
-        
-        help_menu = menubar.addMenu("Помощь")
-        about_action = QAction("О программе", self)
-        about_action.triggered.connect(self._show_about)
-        help_menu.addAction(about_action)
-    
+        central = QWidget()
+        layout = QVBoxLayout(central)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self._create_dashboard(), 1)
+        self.setCentralWidget(central)
+
+    def _create_header(self):
+        header = styled_widget(QWidget(), "topHeader")
+        header.setObjectName("topHeader")
+        header.setFixedHeight(56)
+        row = QHBoxLayout(header)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(10)
+
+        row.addStretch()
+
+        user_label = QLabel(
+            f"{self.current_user.full_name}  ·  "
+            f"{ROLE_NAMES.get(self.current_user.role_id, '')}"
+        )
+        user_label.setProperty("class", "headerUser")
+        user_label.style().unpolish(user_label)
+        user_label.style().polish(user_label)
+        row.addWidget(user_label)
+
+        logout_btn = QPushButton("Выход")
+        logout_btn.setProperty("class", "headerBtn")
+        logout_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        logout_btn.clicked.connect(self._logout)
+        row.addWidget(logout_btn)
+
+        about_btn = QPushButton("О программе")
+        about_btn.setProperty("class", "headerBtn")
+        about_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        about_btn.clicked.connect(self._show_about)
+        row.addWidget(about_btn)
+        return header
+
     def _create_status_bar(self):
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
-        self.status_bar.showMessage(
-            f"{self.current_user.full_name} | {self.current_user.position} | "
-            f"{ROLE_NAMES.get(self.current_user.role_id, '')}"
+        dept = (
+            self.current_user.department.name
+            if self.current_user.department
+            else "—"
         )
-    
-    def _create_central_widget(self):
+        self.status_bar.showMessage(
+            f"{self.current_user.position} | {dept}"
+        )
+
+    def _create_dashboard(self):
         user_service = UserService(self.db_manager)
         course_service = CourseService(self.db_manager)
         audit_service = AuditService(self.db_manager)
         stats_service = StatsService(self.db_manager)
         report_service = ReportService(self.db_manager, stats_service)
         material_service = MaterialService(self.db_manager)
+        header = self._create_header()
         if self.current_user.is_role('main_admin'):
-            widget = AdminDashboardWidget(
+            return AdminDashboardWidget(
                 self.current_user,
                 self.db_manager,
                 user_service,
@@ -132,9 +200,10 @@ class MainWindow(QMainWindow):
                 stats_service,
                 report_service,
                 material_service,
+                header_widget=header,
             )
-        elif self.current_user.is_role('department_head'):
-            widget = DepartmentHeadDashboardWidget(
+        if self.current_user.is_role('department_head'):
+            return DepartmentHeadDashboardWidget(
                 self.current_user,
                 self.db_manager,
                 user_service,
@@ -143,23 +212,27 @@ class MainWindow(QMainWindow):
                 stats_service,
                 report_service,
                 material_service,
+                header_widget=header,
             )
-        else:
-            widget = EmployeeLearningWidget(
-                self.current_user,
-                self.db_manager,
-                course_service,
-                LearningService(self.db_manager),
-                material_service,
-            )
-        self.setCentralWidget(widget)
-    
+        return EmployeeLearningWidget(
+            self.current_user,
+            self.db_manager,
+            course_service,
+            LearningService(self.db_manager),
+            material_service,
+            header_widget=header,
+        )
+
     def _logout(self):
         if QMessageBox.question(self, 'Выход', 'Вы уверены?') == QMessageBox.StandardButton.Yes:
             self.auth_manager.logout()
             self.close()
-    
+
     def _show_about(self):
-        QMessageBox.about(self, "О программе", f"LearnMate Core v2.1\nКлиника РАМИ\nПользователь: {self.current_user.full_name}")
-
-
+        QMessageBox.about(
+            self,
+            "О программе",
+            f"LearnMate Core v3.0\n"
+            f"Платформа корпоративного обучения\n\n"
+            f"Пользователь: {self.current_user.full_name}",
+        )

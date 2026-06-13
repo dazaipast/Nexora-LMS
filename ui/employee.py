@@ -1,11 +1,9 @@
 from sqlalchemy.orm import joinedload
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget,
-    QTableWidgetItem, QMessageBox, QGroupBox, QListWidget, QScrollArea,
-    QProgressBar,
+    QTableWidgetItem, QMessageBox, QListWidget, QProgressBar, QSizePolicy,
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
 
 from constants import HISTORY_HEADERS
 from models import User, UserCourse, Course
@@ -21,109 +19,165 @@ from ui.dialogs import (
     show_course_details,
     open_course_materials_dialog,
 )
+from ui.sidebar import SidebarNav, SidebarTabProxy
+from ui.widgets import create_section_panel
+from ui.style_helpers import styled_widget
 
 EMPLOYEE_COURSE_HEADERS = ["Название", "Тип", "Прогресс", "Срок (дн.)", "Порог %", "Статус"]
 
 
 class EmployeeLearningWidget(QWidget):
-    def __init__(self, actor_user, db_manager, course_service, learning_service, material_service):
+    def __init__(
+        self,
+        actor_user,
+        db_manager,
+        course_service,
+        learning_service,
+        material_service,
+        header_widget=None,
+    ):
         super().__init__()
         self.actor_user = actor_user
         self.db_manager = db_manager
         self.course_service = course_service
         self.learning_service = learning_service
         self.material_service = material_service
+        self._header_widget = header_widget
         self._init_ui()
         self._load_data()
-    
+
     def _init_ui(self):
-        outer_layout = QVBoxLayout(self)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        content = QWidget()
-        layout = QVBoxLayout(content)
+        styled_widget(self, "pageRoot")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        self.sidebar = SidebarNav(
+            [
+                ("Главная", self._create_main_page()),
+                ("История", self._create_history_page()),
+            ],
+            brand="LearnMate Core",
+            subtitle="Моё обучение",
+            header_widget=self._header_widget,
+        )
+        self.tabs = SidebarTabProxy(self.sidebar)
+        self.sidebar.page_selected.connect(self._on_page_selected)
+        self.sidebar.page_title.setVisible(False)
+        layout.addWidget(self.sidebar)
+
+    def _on_page_selected(self, index):
+        self.sidebar.page_title.setVisible(index != 0)
+
+    def _make_header_button(self, label, callback):
+        button = QPushButton(label)
+        button.setProperty("class", "headerBtn")
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.style().unpolish(button)
+        button.style().polish(button)
+        button.clicked.connect(callback)
+        return button
+
+    def _create_main_page(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setSpacing(16)
+        layout.setContentsMargins(0, 4, 0, 0)
 
         self.welcome_label = QLabel()
-        self.welcome_label.setFont(QFont("Arial", 18, QFont.Weight.Bold))
+        self.welcome_label.setProperty("class", "welcomeHeading")
         layout.addWidget(self.welcome_label)
 
-        self.position_label = QLabel()
         self.dept_label = QLabel()
-        layout.addWidget(self.position_label)
+        self.dept_label.setProperty("class", "pageSubtitle")
         layout.addWidget(self.dept_label)
-        layout.addSpacing(12)
 
-        prog_group = QGroupBox("ВАШ ПРОГРЕСС")
-        prog_layout = QVBoxLayout()
+        top_row = QHBoxLayout()
+        top_row.setSpacing(16)
+        top_row.setContentsMargins(0, 0, 0, 0)
 
+        prog_panel, prog_layout = create_section_panel()
+        prog_title = QLabel("Ваш прогресс")
+        styled_widget(prog_title, "sectionTitle")
+        prog_layout.addWidget(prog_title)
         self.adapt_progress = QProgressBar()
         self.adapt_progress.setMaximum(100)
         self.adapt_progress.setFormat("Адаптация: %p%")
-
         self.know_progress = QProgressBar()
         self.know_progress.setMaximum(100)
         self.know_progress.setFormat("Общие знания: %p%")
-
         self.skill_progress = QProgressBar()
         self.skill_progress.setMaximum(100)
         self.skill_progress.setFormat("Проф. навыки: %p%")
-
         prog_layout.addWidget(self.adapt_progress)
         prog_layout.addWidget(self.know_progress)
         prog_layout.addWidget(self.skill_progress)
-        prog_group.setLayout(prog_layout)
-        layout.addWidget(prog_group)
+        prog_layout.addStretch()
 
-        today_group = QGroupBox("СЕГОДНЯ ВАМ")
-        today_layout = QVBoxLayout()
-        self.today_list = QListWidget()
-        self.today_list.setMaximumHeight(110)
-        today_layout.addWidget(self.today_list)
-        today_group.setLayout(today_layout)
-        layout.addWidget(today_group)
-
-        rec_group = QGroupBox("РЕКОМЕНДАЦИИ")
-        rec_layout = QVBoxLayout()
+        rec_panel, rec_layout = create_section_panel()
+        rec_title = QLabel("Рекомендации")
+        styled_widget(rec_title, "sectionTitle")
+        rec_layout.addWidget(rec_title)
         self.recommendations_list = QListWidget()
-        self.recommendations_list.setMaximumHeight(110)
-        rec_layout.addWidget(self.recommendations_list)
-        rec_group.setLayout(rec_layout)
-        layout.addWidget(rec_group)
+        self.recommendations_list.setProperty("class", "flatList")
+        self.recommendations_list.style().unpolish(self.recommendations_list)
+        self.recommendations_list.style().polish(self.recommendations_list)
+        rec_layout.addWidget(self.recommendations_list, 1)
 
-        courses_group = QGroupBox("ДОСТУПНЫЕ КУРСЫ")
-        courses_layout = QVBoxLayout()
+        today_panel, today_layout = create_section_panel()
+        today_title = QLabel("Сегодня вам")
+        styled_widget(today_title, "sectionTitle")
+        today_layout.addWidget(today_title)
+        self.today_list = QListWidget()
+        self.today_list.setProperty("class", "flatList")
+        self.today_list.style().unpolish(self.today_list)
+        self.today_list.style().polish(self.today_list)
+        today_layout.addWidget(self.today_list, 1)
 
+        courses_panel, courses_layout = create_section_panel()
+        courses_title = QLabel("Мои курсы")
+        styled_widget(courses_title, "sectionTitle")
+        courses_layout.addWidget(courses_title)
         course_actions = QHBoxLayout()
-        pass_course_btn = QPushButton("Пройти курс")
-        pass_course_btn.clicked.connect(self._open_pass_course_dialog)
-        view_course_btn = QPushButton("Просмотр")
-        view_course_btn.clicked.connect(self._open_view_course_dialog)
-        materials_btn = QPushButton("Материалы")
-        materials_btn.clicked.connect(self._open_course_materials_dialog)
-        course_actions.addWidget(pass_course_btn)
-        course_actions.addWidget(view_course_btn)
-        course_actions.addWidget(materials_btn)
+        course_actions.setSpacing(10)
+        course_actions.addWidget(self._make_header_button("Пройти", self._open_pass_course_dialog))
+        course_actions.addWidget(self._make_header_button("Просмотр", self._open_view_course_dialog))
+        course_actions.addWidget(self._make_header_button("Материалы", self._open_course_materials_dialog))
         course_actions.addStretch()
         courses_layout.addLayout(course_actions)
-
         self.courses_table = QTableWidget()
         configure_readonly_table(self.courses_table, EMPLOYEE_COURSE_HEADERS)
         self.courses_table.doubleClicked.connect(self._open_pass_course_dialog)
-        courses_layout.addWidget(self.courses_table)
-        courses_group.setLayout(courses_layout)
-        layout.addWidget(courses_group)
+        courses_layout.addWidget(self.courses_table, 1)
 
-        history_group = QGroupBox("ИСТОРИЯ ОБУЧЕНИЯ")
-        history_layout = QVBoxLayout()
+        for panel in (prog_panel, rec_panel, today_panel):
+            panel.setSizePolicy(
+                QSizePolicy.Policy.Expanding,
+                QSizePolicy.Policy.Preferred,
+            )
+            panel.setMinimumHeight(180)
+            top_row.addWidget(panel, 1)
+
+        courses_panel.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
+        )
+        courses_panel.setMinimumHeight(240)
+
+        layout.addLayout(top_row)
+        layout.addWidget(courses_panel, 1)
+        return page
+
+    def _create_history_page(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 4, 0, 0)
+
+        history_panel, history_layout = create_section_panel()
         self.history_table = QTableWidget()
         configure_readonly_table(self.history_table, HISTORY_HEADERS)
-        self.history_table.setMinimumHeight(140)
         history_layout.addWidget(self.history_table)
-        history_group.setLayout(history_layout)
-        layout.addWidget(history_group)
-
-        scroll.setWidget(content)
-        outer_layout.addWidget(scroll)
+        layout.addWidget(history_panel)
+        return page
 
     def _open_pass_course_dialog(self):
         course_id = get_selected_course_id(self.courses_table)
@@ -175,8 +229,10 @@ class EmployeeLearningWidget(QWidget):
             if user:
                 first_name = user.full_name.split(maxsplit=1)[0]
                 self.welcome_label.setText(f"Добрый день, {first_name}!")
-                self.position_label.setText(f"Должность: {user.position}")
-                self.dept_label.setText(f"Отдел: {user.department.name if user.department else ''}")
+                self.dept_label.setText(
+                    f"{user.position}  ·  "
+                    f"{user.department.name if user.department else '—'}"
+                )
 
             user_courses = (
                 db.query(UserCourse)
@@ -227,6 +283,3 @@ class EmployeeLearningWidget(QWidget):
                 self.history_table,
                 self.learning_service.get_learning_history(self.actor_user.id, db=db),
             )
-
-
-
