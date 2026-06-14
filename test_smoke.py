@@ -100,6 +100,30 @@ def test_dept_head_stats():
         stats.get_employee_stats(session, department_id=dept_id)
 
 
+def test_create_department():
+    from database import DatabaseManager
+    from services import AuthManager, DepartmentService
+    from models import Department
+
+    db = _db()
+    auth = AuthManager(db)
+    auth.authenticate("n.makanina@rami-clinic.ru", "admin123")
+    admin = auth.get_current_user()
+    dept_service = DepartmentService(db)
+
+    dept_id = dept_service.create_department(
+        admin.id,
+        "Тестовое подразделение smoke",
+        "Создано автотестом",
+    )
+    assert dept_id
+
+    with db.session_scope() as session:
+        dept = session.query(Department).filter(Department.id == dept_id).first()
+        assert dept is not None
+        assert dept.name == "Тестовое подразделение smoke"
+
+
 def test_courses_list():
     from database import DatabaseManager
     from services import AuthManager, CourseService
@@ -190,6 +214,7 @@ def main():
     check("auth all roles", test_auth_all_roles)
     check("admin stats & export", test_stats_and_reports)
     check("dept head stats", test_dept_head_stats)
+    check("create department", test_create_department)
     check("courses list", test_courses_list)
     check("learning service", test_learning_service)
     check("quiz parser", test_quiz_parser)

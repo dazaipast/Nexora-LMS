@@ -38,9 +38,14 @@ from ui.table_helpers import (
     get_selected_user_id,
 )
 from ui.sidebar import SidebarNav, SidebarTabProxy
-from ui.widgets import create_section_panel, create_stat_grid
+from ui.widgets import create_section_panel, create_stat_grid, create_section_header
 from ui.style_helpers import styled_widget
-from ui.dialogs import AddUserDialog, ChangeDepartmentDialog, confirm_deactivate_user
+from ui.dialogs import (
+    AddUserDialog,
+    AddDepartmentDialog,
+    ChangeDepartmentDialog,
+    confirm_deactivate_user,
+)
 
 class AdminDashboardWidget(
     StatCardMixin, CoursesPanelMixin, AuditPanelMixin, QuickActionsMixin, QWidget
@@ -55,6 +60,7 @@ class AdminDashboardWidget(
         stats_service,
         report_service,
         material_service,
+        department_service,
         header_widget=None,
     ):
         super().__init__()
@@ -66,6 +72,7 @@ class AdminDashboardWidget(
         self.stats_service = stats_service
         self.report_service = report_service
         self.material_service = material_service
+        self.department_service = department_service
         self._header_widget = header_widget
         self._init_ui()
         self._load_data()
@@ -97,6 +104,7 @@ class AdminDashboardWidget(
         layout.setContentsMargins(0, 4, 0, 0)
 
         layout.addWidget(self._create_quick_actions_group([
+            ("Создать подразделение", self._quick_add_department),
             ("Создать курс", self._quick_create_course),
             ("Добавить руководителя", self._quick_add_manager),
             ("Экспорт CSV", self._quick_export_report),
@@ -144,6 +152,13 @@ class AdminDashboardWidget(
         ]))
 
         dept_panel, dept_layout = create_section_panel()
+        dept_header = QHBoxLayout()
+        dept_header.addWidget(create_section_header("Подразделения"))
+        dept_header.addStretch()
+        add_dept_btn = QPushButton("Добавить подразделение")
+        add_dept_btn.clicked.connect(self._open_add_department_dialog)
+        dept_header.addWidget(add_dept_btn)
+        dept_layout.addLayout(dept_header)
         self.depts_table = QTableWidget()
         configure_readonly_table(self.depts_table, DEPT_STATS_HEADERS)
         self.depts_table.setMinimumHeight(220)
@@ -152,6 +167,10 @@ class AdminDashboardWidget(
 
         layout.addStretch()
         return tab
+
+    def _quick_add_department(self):
+        self._switch_to_tab("Обзор")
+        self._open_add_department_dialog()
 
     def _quick_create_course(self):
         self._switch_to_tab("Курсы")
@@ -297,6 +316,17 @@ class AdminDashboardWidget(
             QMessageBox.warning(self, "Ошибка", str(exc))
         except Exception as exc:
             QMessageBox.critical(self, "Ошибка", f"Не удалось удалить пользователя: {exc}")
+
+    def _open_add_department_dialog(self):
+        dialog = AddDepartmentDialog(
+            self.db_manager,
+            self.actor_user,
+            self.department_service,
+            parent=self,
+        )
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            QMessageBox.information(self, "Готово", "Подразделение успешно создано")
+            self._load_data()
 
     def _open_add_user_dialog(self, role_id):
         dialog = AddUserDialog(

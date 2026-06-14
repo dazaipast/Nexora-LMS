@@ -303,6 +303,63 @@ class AddUserDialog(QDialog):
             QMessageBox.critical(self, "Ошибка", f"Не удалось создать пользователя: {exc}")
 
 
+class AddDepartmentDialog(QDialog):
+    def __init__(self, db_manager, actor_user, department_service, parent=None):
+        super().__init__(parent)
+        self.db_manager = db_manager
+        self.actor_user = actor_user
+        self.department_service = department_service
+
+        self.setWindowTitle("Создать подразделение")
+        self.setMinimumWidth(460)
+        self._init_ui()
+
+    def _init_ui(self):
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+
+        self.name_input = QLineEdit()
+        self.name_input.setPlaceholderText("Например: Контакт-центр")
+        form.addRow("Название:", self.name_input)
+
+        self.description_input = QTextEdit()
+        self.description_input.setPlaceholderText("Краткое описание подразделения (необязательно)")
+        self.description_input.setMaximumHeight(100)
+        form.addRow("Описание:", self.description_input)
+
+        layout.addLayout(form)
+
+        hint = QLabel(
+            "После сохранения подразделение появится в общем списке и станет "
+            "доступным при создании пользователей и курсов."
+        )
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.button(QDialogButtonBox.StandardButton.Save).setText("Сохранить")
+        buttons.accepted.connect(self._on_save)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _on_save(self):
+        try:
+            self.department_service.create_department(
+                self.actor_user.id,
+                self.name_input.text(),
+                self.description_input.toPlainText(),
+            )
+            self.accept()
+        except PermissionError as exc:
+            QMessageBox.warning(self, "Доступ запрещён", str(exc))
+        except ValueError as exc:
+            QMessageBox.warning(self, "Ошибка", str(exc))
+        except Exception as exc:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось создать подразделение: {exc}")
+
+
 class AddCourseDialog(QDialog):
     def __init__(self, db_manager, actor_user, course_service, fixed_department_id=None, parent=None):
         super().__init__(parent)
