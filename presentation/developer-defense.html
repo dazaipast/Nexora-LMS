@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Защита — LearnMate Core LMS</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2332;
+      --surface2: #243044;
+      --border: #2d3a4f;
+      --text: #e8edf4;
+      --muted: #94a3b8;
+      --accent: #0d6e6e;
+      --accent2: #14b8a6;
+      --blue: #3b82f6;
+      --wine: #7c3aed;
+      --ok: #22c55e;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Inter, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+    }
+    .hint {
+      position: fixed; bottom: 14px; right: 18px; z-index: 99;
+      font-size: 14px; color: var(--muted);
+    }
+    .bar {
+      position: fixed; top: 0; left: 0; height: 3px; z-index: 99;
+      background: linear-gradient(90deg, var(--accent), var(--blue));
+      transition: width .3s;
+    }
+    .deck {
+      width: 100vw; height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .slide {
+      display: none;
+      width: min(96vw, 1280px);
+      height: min(92vh, 720px);
+      background: linear-gradient(145deg, var(--surface) 0%, #121820 100%);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 44px 52px 56px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 30px 80px rgba(0,0,0,.45);
+    }
+    .slide.active { display: flex; flex-direction: column; animation: in .35s ease; }
+    @keyframes in { from { opacity:0; transform:translateY(10px);} to {opacity:1;transform:none;} }
+    .slide::after {
+      content: ""; position: absolute; top: -80px; right: -80px;
+      width: 260px; height: 260px; border-radius: 50%;
+      background: radial-gradient(circle, rgba(13,110,110,.15), transparent 70%);
+      pointer-events: none;
+    }
+    .tag {
+      display: inline-block; font-size: 14px; font-weight: 600;
+      letter-spacing: .06em; text-transform: uppercase;
+      color: var(--accent2); background: rgba(20,184,166,.12);
+      border: 1px solid rgba(20,184,166,.25);
+      padding: 6px 14px; border-radius: 999px; margin-bottom: 14px;
+    }
+    h1 { font-size: 42px; line-height: 1.2; font-weight: 700; max-width: 920px; }
+    h2 { font-size: 36px; font-weight: 700; margin-bottom: 20px; color: #fff; }
+    h3 { font-size: 19px; font-weight: 600; color: #fff; margin-bottom: 8px; }
+    p, li { font-size: 18px; line-height: 1.5; color: var(--muted); }
+    .sub { font-size: 20px; color: var(--muted); margin-top: 10px; max-width: 900px; }
+    .foot {
+      position: absolute; bottom: 18px; left: 52px; right: 52px;
+      display: flex; justify-content: space-between;
+      font-size: 14px; color: var(--muted);
+      border-top: 1px solid var(--border); padding-top: 10px;
+    }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; flex: 1; min-height: 0; }
+    .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .card {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 14px; padding: 18px 20px;
+    }
+    .card p { font-size: 17px; margin-top: 6px; }
+    .metrics { display: flex; gap: 12px; margin-top: 14px; }
+    .metric {
+      flex: 1; text-align: center; background: var(--surface2);
+      border: 1px solid var(--border); border-radius: 12px; padding: 16px 10px;
+    }
+    .metric strong { display: block; font-size: 32px; color: var(--accent2); margin-bottom: 4px; }
+    .metric span { font-size: 15px; color: var(--muted); }
+    ul.compact { list-style: none; }
+    ul.compact li {
+      font-size: 17px; color: var(--text); padding-left: 18px;
+      position: relative; margin-bottom: 9px;
+    }
+    ul.compact li::before {
+      content: ""; position: absolute; left: 0; top: 9px;
+      width: 7px; height: 7px; border-radius: 50%; background: var(--accent2);
+    }
+    .flow {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+      margin: 14px 0; font-size: 16px; font-weight: 600; color: var(--text);
+    }
+    .flow span {
+      background: var(--surface2); border: 1px solid var(--border);
+      padding: 10px 14px; border-radius: 8px;
+    }
+    .flow .arr { color: var(--accent2); background: none; border: none; padding: 0 2px; }
+    .shots {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; flex: 1; min-height: 0;
+    }
+    .shots .shot img { max-height: 130px; object-fit: cover; object-position: top; }
+    .shot img {
+      width: 100%; border-radius: 10px; border: 1px solid var(--border);
+      display: block; box-shadow: 0 8px 24px rgba(0,0,0,.35);
+    }
+    .shot figcaption { text-align: center; font-size: 14px; color: var(--muted); margin-top: 6px; }
+    .arch-row { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
+    .arch-box {
+      min-width: 150px; text-align: center; padding: 16px 14px;
+      background: var(--surface2); border: 1px solid var(--border); border-radius: 12px;
+    }
+    .arch-box strong { display: block; font-size: 16px; color: #fff; margin-bottom: 4px; }
+    .arch-box span { font-size: 14px; color: var(--muted); }
+    .arch-arr { color: var(--accent2); font-size: 22px; font-weight: 700; }
+    table {
+      width: 100%; border-collapse: collapse; font-size: 16px;
+    }
+    th, td { border: 1px solid var(--border); padding: 11px 13px; text-align: left; }
+    th { background: var(--surface2); color: #fff; font-weight: 600; }
+    td { color: var(--muted); }
+    .pass { color: var(--ok); font-weight: 700; }
+    .psr { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-top: 8px; }
+    .psr .card strong { color: var(--accent2); font-size: 16px; display: block; margin-bottom: 8px; }
+    .hero-shot { border-radius: 12px; border: 1px solid var(--border); max-height: 100%; width: 100%; object-fit: cover; }
+    .logo-img {
+      width: min(260px, 100%);
+      height: auto;
+      display: block;
+      border-radius: 14px;
+      background: #fff;
+      padding: 14px 18px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.25);
+    }
+    .title-side {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 16px; padding: 28px; text-align: center;
+    }
+    .title-side h3 { font-size: 26px; color: var(--accent2); margin-bottom: 4px; }
+    .note { font-size: 16px; color: var(--muted); margin-top: 10px; font-style: italic; }
+    .pill-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .pill {
+      font-size: 15px; padding: 8px 12px; border-radius: 8px;
+      background: rgba(59,130,246,.12); border: 1px solid rgba(59,130,246,.25); color: #93c5fd;
+    }
+    @media print {
+      body { background: #fff; }
+      .slide { display: flex !important; page-break-after: always; box-shadow: none; }
+      .hint, .bar { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="bar" id="bar"></div>
+  <div class="hint">← → пробел · F11 · Ctrl+P → PDF</div>
+  <div class="deck" id="deck">
+
+    <!-- 1 -->
+    <section class="slide active">
+      <span class="tag">Индивидуальный практико-ориентированный проект</span>
+      <div class="grid2" style="flex:1;align-items:center;">
+        <div>
+          <h1>Desktop-приложение LMS «LearnMate Core» для управления корпоративным обучением персонала</h1>
+          <p class="sub">Предметная область: разработка ПО, базы данных, информационные системы</p>
+          <p style="margin-top:22px;font-size:20px;color:var(--text);">
+            <strong style="color:#fff;">Константинов Валерий Владимирович</strong><br>
+            Научный руководитель: Макаров Максим Николаевич<br>
+            ММКЦТ «Академия ТОП» · 2026
+          </p>
+          <p class="note">Релиз LMC v1.2 · Python · PyQt6 · SQLite</p>
+        </div>
+        <div class="title-side">
+          <img class="logo-img" src="assets/learnmate-core-logo.png" alt="LearnMate Core">
+          <p style="margin-top:14px;font-size:17px;color:var(--muted);">Learning Management System</p>
+        </div>
+      </div>
+      <div class="foot"><span>Защита проекта разработчика</span><span>1 / 10</span></div>
+    </section>
+
+    <!-- 2 -->
+    <section class="slide">
+      <h2>Кратко о проекте</h2>
+      <p class="sub">Desktop LMS для клиники: обучение, контроль прогресса, отчёты. · 20–30 сек</p>
+      <div class="grid2" style="margin-top:8px;">
+        <div class="card"><h3>Что разработано</h3><p>Desktop-приложение с ролями, курсами, модулями, тестами DOCX, статистикой и CSV-экспортом. Сборка в .exe.</p></div>
+        <div class="card"><h3>Для кого</h3><p>HR / администратор клиники, руководители подразделений, сотрудники.</p></div>
+        <div class="card"><h3>Какую задачу решает</h3><p>Заменяет ручной контроль обучения (Excel, мессенджеры) единой системой с прогрессом и отчётами.</p></div>
+        <div class="card"><h3>Результат</h3><p>Админ управляет пользователями и курсами. Сотрудник проходит обучение. Руководитель видит статистику отдела.</p></div>
+      </div>
+      <p style="margin-top:14px;color:var(--accent2);font-size:18px;font-weight:600;">Цель достигнута: работающий прототип LMS с авторизацией, ролями и базой данных.</p>
+      <div class="foot"><span>Кратко о проекте</span><span>2 / 10</span></div>
+    </section>
+
+    <!-- 3 -->
+    <section class="slide">
+      <h2>Основной функционал</h2>
+      <p class="sub">Только реализованные возможности по ролям (LMC v1.2)</p>
+      <div class="grid3">
+        <div class="card">
+          <h3>Администратор</h3>
+          <ul class="compact">
+            <li>Обзор KPI по клинике</li>
+            <li>CRUD пользователей</li>
+            <li>Управление курсами</li>
+            <li>Журнал аудита</li>
+            <li>Экспорт CSV</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Руководитель</h3>
+          <ul class="compact">
+            <li>Сотрудники отдела</li>
+            <li>Создание курсов отдела</li>
+            <li>Назначение обучения</li>
+            <li>Статистика и отчёт</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Сотрудник</h3>
+          <ul class="compact">
+            <li>Личный кабинет</li>
+            <li>Прохождение модулей</li>
+            <li>Тесты из DOCX</li>
+            <li>Рекомендации и история</li>
+          </ul>
+        </div>
+      </div>
+      <div class="metrics">
+        <div class="metric"><strong>3</strong><span>роли</span></div>
+        <div class="metric"><strong>8</strong><span>сервисов</span></div>
+        <div class="metric"><strong>12+</strong><span>таблиц БД</span></div>
+        <div class="metric"><strong>8</strong><span>smoke-тестов</span></div>
+      </div>
+      <div class="foot"><span>Функционал</span><span>3 / 10</span></div>
+    </section>
+
+    <!-- 4 -->
+    <section class="slide">
+      <h2>Сценарий пользователя и интерфейс</h2>
+      <div class="flow">
+        <span>Вход</span><span class="arr">→</span>
+        <span>Курсы</span><span class="arr">→</span>
+        <span>Материалы</span><span class="arr">→</span>
+        <span>Тест</span><span class="arr">→</span>
+        <span>Прогресс</span><span class="arr">→</span>
+        <span>Отчёт</span>
+      </div>
+      <div class="shots">
+        <figure class="shot"><img src="screenshots-lmc12/01_login.png" alt="Вход"><figcaption>Рис. — авторизация</figcaption></figure>
+        <figure class="shot"><img src="screenshots-lmc12/02_admin_dashboard.png" alt="Админ"><figcaption>Рис. — админ-панель</figcaption></figure>
+        <figure class="shot"><img src="screenshots-lmc12/03_create_course.png" alt="Курс"><figcaption>Рис. — создание курса</figcaption></figure>
+        <figure class="shot"><img src="screenshots-lmc12/04_assign_course.png" alt="Назначение"><figcaption>Рис. — назначение</figcaption></figure>
+      </div>
+      <figure class="shot" style="margin-top:8px;max-width:48%;">
+        <img src="screenshots-lmc12/05_employee_dashboard.png" alt="Сотрудник" style="max-height:115px;object-fit:cover;object-position:top;">
+        <figcaption>Рис. — кабинет сотрудника</figcaption>
+      </figure>
+      <div class="foot"><span>UI / сценарий</span><span>4 / 10</span></div>
+    </section>
+
+    <!-- 5 -->
+    <section class="slide">
+      <h2>Архитектура и логика работы</h2>
+      <p class="sub">Layered Architecture: UI → Services → ORM → SQLite</p>
+      <div class="arch-row">
+        <div class="arch-box"><strong>PyQt6 UI</strong><span>Login · Dashboards · Dialogs</span></div>
+        <span class="arch-arr">→</span>
+        <div class="arch-box"><strong>Services</strong><span>Auth · User · Course · Stats</span></div>
+        <span class="arch-arr">→</span>
+        <div class="arch-box"><strong>SQLAlchemy</strong><span>Models · ORM</span></div>
+        <span class="arch-arr">→</span>
+        <div class="arch-box"><strong>SQLite</strong><span>learnmate_core.db</span></div>
+      </div>
+      <div class="grid2" style="margin-top:10px;">
+        <div class="card">
+          <h3>Структура проекта</h3>
+          <ul class="compact">
+            <li><code style="color:#93c5fd">main.py</code> — точка входа</li>
+            <li><code style="color:#93c5fd">ui/</code> — интерфейс PyQt6</li>
+            <li><code style="color:#93c5fd">services/</code> — бизнес-логика</li>
+            <li><code style="color:#93c5fd">models.py</code> — ORM-модели</li>
+            <li><code style="color:#93c5fd">database.py</code> — БД и миграции</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Пример потока данных</h3>
+          <ul class="compact">
+            <li>Кнопка «Создать курс» → <code style="color:#93c5fd">AddCourseDialog</code></li>
+            <li>→ <code style="color:#93c5fd">CourseService.create_course()</code></li>
+            <li>→ SQLAlchemy → таблицы courses, audit_logs</li>
+            <li>→ обновление таблицы в UI</li>
+          </ul>
+        </div>
+      </div>
+      <div class="foot"><span>Архитектура</span><span>5 / 10</span></div>
+    </section>
+
+    <!-- 6 -->
+    <section class="slide">
+      <h2>Стек технологий</h2>
+      <table>
+        <thead><tr><th>Компонент</th><th>Технологии</th><th>Зачем выбрано</th></tr></thead>
+        <tbody>
+          <tr><td>Язык</td><td>Python 3.13</td><td>Быстрая разработка, богатая экосистема</td></tr>
+          <tr><td>UI</td><td>PyQt6</td><td>Нативный desktop, таблицы, формы, стили QSS</td></tr>
+          <tr><td>ORM</td><td>SQLAlchemy 2</td><td>Модели, связи, миграции, запросы</td></tr>
+          <tr><td>БД</td><td>SQLite</td><td>Локальная работа без сервера, один файл</td></tr>
+          <tr><td>Безопасность</td><td>bcrypt</td><td>Хеширование паролей</td></tr>
+          <tr><td>Сборка</td><td>PyInstaller</td><td>Один .exe без установки Python</td></tr>
+        </tbody>
+      </table>
+      <div class="pill-row">
+        <span class="pill">Python</span><span class="pill">PyQt6</span><span class="pill">SQLite</span>
+        <span class="pill">SQLAlchemy</span><span class="pill">PyInstaller</span>
+        <span class="pill">GitHub</span><span class="pill">github.com/dazaipast/LearnMateCore</span>
+      </div>
+      <div class="foot"><span>Стек</span><span>6 / 10</span></div>
+    </section>
+
+    <!-- 7 -->
+    <section class="slide">
+      <h2>Самое сложное техническое решение</h2>
+      <p class="sub">Ролевая модель доступа + оптимизация статистики (batch-запросы)</p>
+      <div class="psr">
+        <div class="card"><strong>Проблема</strong><p>Нужно разграничить права 3 ролей и при этом быстро строить сводки по отделам без сотен SQL-запросов (N+1).</p></div>
+        <div class="card"><strong>Решение</strong><p>Проверки <code style="color:#93c5fd">can_create / can_deactivate</code> в сервисах. Агрегация stats через GROUP BY и joinedload. Переиспользование employee_stats.</p></div>
+        <div class="card"><strong>Результат</strong><p>Админ видит всю клинику, руководитель — только свой отдел. Дашборд загружается за 1–3 запроса вместо 15+.</p></div>
+      </div>
+      <img class="hero-shot" src="screenshots-lmc12/02_admin_dashboard.png" alt="KPI" style="margin-top:12px;max-height:175px;object-fit:cover;object-position:top left;">
+      <div class="foot"><span>Техническое решение</span><span>7 / 10</span></div>
+    </section>
+
+    <!-- 8 -->
+    <section class="slide">
+      <h2>Тестирование работоспособности</h2>
+      <div class="grid2">
+        <table>
+          <thead><tr><th>Что проверяли</th><th>Как</th><th>Результат</th></tr></thead>
+          <tbody>
+            <tr><td>Запуск</td><td>python main.py / .exe</td><td class="pass">Pass</td></tr>
+            <tr><td>Авторизация 3 ролей</td><td>test_smoke.py</td><td class="pass">Pass</td></tr>
+            <tr><td>CRUD пользователей</td><td>UI + сервисы</td><td class="pass">Pass</td></tr>
+            <tr><td>Курсы и назначение</td><td>UI сценарий</td><td class="pass">Pass</td></tr>
+            <tr><td>БД</td><td>SQLite WAL, миграции</td><td class="pass">Pass</td></tr>
+            <tr><td>Интерфейс</td><td>Offscreen UI test</td><td class="pass">Pass</td></tr>
+            <tr><td>Парсер тестов</td><td>DOCX → quiz</td><td class="pass">Pass</td></tr>
+          </tbody>
+        </table>
+        <div>
+          <div class="metrics" style="flex-direction:column;">
+            <div class="metric"><strong>8/8</strong><span>smoke-тестов OK</span></div>
+            <div class="metric"><strong>0</strong><span>критических багов</span></div>
+          </div>
+          <div class="card" style="margin-top:14px;">
+            <h3>Найдено и исправлено</h3>
+            <ul class="compact">
+              <li>ImportError в dashboards при добавлении руководителя</li>
+              <li>N+1 запросы в статистике → batch</li>
+              <li>Восстановление demo-аккаунтов при старте</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="foot"><span>Тестирование</span><span>8 / 10</span></div>
+    </section>
+
+    <!-- 9 -->
+    <section class="slide">
+      <h2>Итоговый результат</h2>
+      <div class="grid2">
+        <div>
+          <h3 style="margin-bottom:10px;">Что получилось</h3>
+          <ul class="compact">
+            <li>Desktop LMS LearnMate Core v1.2</li>
+            <li>3 роли, модульные курсы, тесты</li>
+            <li>SQLite + CSV-отчёты + аудит</li>
+            <li>Сборка LearnMate Core.exe</li>
+            <li>8 smoke-тестов — Pass</li>
+          </ul>
+          <h3 style="margin:16px 0 10px;">Что освоил</h3>
+          <ul class="compact">
+            <li>Проектирование БД и ORM</li>
+            <li>Desktop UI на PyQt6</li>
+            <li>Ролевая авторизация</li>
+            <li>Тестирование и сборка exe</li>
+          </ul>
+          <p class="note" style="margin-top:12px;">Перспективы: облачная версия · мобильный клиент · интеграция с HR-системой</p>
+        </div>
+        <div class="title-side">
+          <img class="logo-img" src="assets/learnmate-core-logo.png" alt="LearnMate Core">
+          <p style="margin-top:14px;font-size:18px;color:var(--text);">Работоспособный прототип LMS</p>
+          <p style="margin-top:8px;font-size:17px;color:var(--muted);">LMC v1.2 · GitHub Releases</p>
+        </div>
+      </div>
+      <div class="foot"><span>Итог</span><span>9 / 10</span></div>
+    </section>
+
+    <!-- 10 -->
+    <section class="slide">
+      <h2>Демонстрация проекта</h2>
+      <p class="sub">Live-demo · LearnMate Core.exe или python main.py</p>
+      <div class="grid2" style="align-items:start;">
+        <div class="card">
+          <h3>Чеклист демо</h3>
+          <ul class="compact">
+            <li>Вход администратора → обзор KPI</li>
+            <li>Создание курса → материалы</li>
+            <li>Назначение сотруднику</li>
+            <li>Вход сотрудника → прохождение</li>
+            <li>Экспорт CSV · журнал аудита</li>
+          </ul>
+          <p style="margin-top:14px;font-size:17px;color:var(--text);">
+            <strong style="color:#fff;">Демо-аккаунты:</strong><br>
+            admin: n.makanina@rami-clinic.ru / admin123<br>
+            employee: a.petrova@rami-clinic.ru / employee123
+          </p>
+        </div>
+        <div class="title-side" style="min-height:280px;">
+          <h3 style="font-size:38px;color:#fff;">Спасибо за внимание!</h3>
+          <p style="font-size:26px;color:var(--accent2);margin-top:12px;font-weight:600;">Вопросы?</p>
+          <p style="margin-top:16px;">Готов показать проект в работе</p>
+        </div>
+      </div>
+      <div class="foot"><span>Демонстрация</span><span>10 / 10</span></div>
+    </section>
+
+  </div>
+  <script>
+    const slides = [...document.querySelectorAll('.slide')];
+    let n = 0;
+    const bar = document.getElementById('bar');
+    function show(i) {
+      n = Math.max(0, Math.min(slides.length - 1, i));
+      slides.forEach((s, j) => s.classList.toggle('active', j === n));
+      bar.style.width = ((n + 1) / slides.length * 100) + '%';
+    }
+    document.addEventListener('keydown', e => {
+      if (['ArrowRight','ArrowDown',' ','PageDown'].includes(e.key)) { e.preventDefault(); show(n+1); }
+      if (['ArrowLeft','ArrowUp','PageUp'].includes(e.key)) { e.preventDefault(); show(n-1); }
+      if (e.key === 'Home') show(0);
+      if (e.key === 'End') show(slides.length - 1);
+    });
+    show(0);
+  </script>
+</body>
+</html>
