@@ -4,6 +4,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 
+from constants import APP_FULL_NAME
 from ui.style_helpers import styled_widget
 from ui.theme import COLORS
 
@@ -16,7 +17,7 @@ class SidebarNav(QWidget):
     def __init__(
         self,
         pages,
-        brand="LearnMate Core",
+        brand=APP_FULL_NAME,
         subtitle="",
         header_widget=None,
         parent=None,

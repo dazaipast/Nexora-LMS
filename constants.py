@@ -1,3 +1,10 @@
+APP_NAME = "Nexora"
+APP_FULL_NAME = "Nexora LMS"
+APP_VERSION = "1.0"
+APP_TAGLINE = "Платформа корпоративного обучения"
+DB_FILENAME = "nexora_lms.db"
+LEGACY_DB_FILENAME = "learnmate_core.db"
+
 ROLE_CODES = {'main_admin': 1, 'department_head': 2, 'employee': 3}
 ROLE_NAMES = {1: "Главный администратор", 2: "Руководитель", 3: "Сотрудник"}
 MAIN_ADMIN_ROLE_ID = ROLE_CODES['main_admin']

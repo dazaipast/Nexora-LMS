@@ -8,6 +8,7 @@ from sqlalchemy.orm import sessionmaker, joinedload
 from models import (
     Base, Department, Role, User, Course, CourseMaterial, UserCourse, AuditLog,
 )
+from constants import DB_FILENAME, LEGACY_DB_FILENAME
 from utils import infer_course_type_from_title
 
 def _resolve_app_dir():
@@ -20,6 +21,21 @@ APP_DIR = _resolve_app_dir()
 MATERIALS_DIR = APP_DIR / "course_materials"
 
 
+def _resolve_db_path(app_dir):
+    db_path = app_dir / DB_FILENAME
+    legacy_path = app_dir / LEGACY_DB_FILENAME
+    if not db_path.exists() and legacy_path.exists():
+        try:
+            legacy_path.rename(db_path)
+            for suffix in ("-shm", "-wal"):
+                legacy_sidecar = app_dir / f"{LEGACY_DB_FILENAME}{suffix}"
+                if legacy_sidecar.exists():
+                    legacy_sidecar.rename(app_dir / f"{DB_FILENAME}{suffix}")
+        except OSError:
+            return legacy_path
+    return db_path
+
+
 def _configure_sqlite_connection(dbapi_connection, _connection_record):
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")
@@ -29,7 +45,7 @@ def _configure_sqlite_connection(dbapi_connection, _connection_record):
 
 class DatabaseManager:
     def __init__(self):
-        self.db_path = APP_DIR / "learnmate_core.db"
+        self.db_path = _resolve_db_path(APP_DIR)
         self.SQLALCHEMY_DATABASE_URL = f"sqlite:///{self.db_path.as_posix()}"
         self.engine = create_engine(
             self.SQLALCHEMY_DATABASE_URL,

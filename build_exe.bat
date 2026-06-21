@@ -1,7 +1,7 @@
 @echo off
 cd /d "%~dp0"
 
-echo Building LearnMate Core...
+echo Building Nexora LMS...
 echo.
 
 if not exist "venv\Scripts\python.exe" (
@@ -32,7 +32,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo DONE: dist\LearnMate Core.exe
+echo DONE: dist\Nexora LMS.exe
 echo Copy this file to users - Python is not required.
 echo Database and course_materials folder will appear next to the exe on first run.
 echo.

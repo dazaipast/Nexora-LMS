@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 
-from constants import HISTORY_HEADERS
+from constants import HISTORY_HEADERS, APP_FULL_NAME
 from utils import format_percent, course_pass_status, split_employee_progress, course_type_label
 from ui.table_helpers import (
     configure_readonly_table,
@@ -54,7 +54,7 @@ class EmployeeLearningWidget(QWidget):
                 ("Главная", self._create_main_page()),
                 ("История", self._create_history_page()),
             ],
-            brand="LearnMate Core",
+            brand=APP_FULL_NAME,
             subtitle="Моё обучение",
             header_widget=self._header_widget,
         )

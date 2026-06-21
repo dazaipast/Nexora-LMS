@@ -1,5 +1,6 @@
 from sqlalchemy.orm import joinedload
 
+from constants import APP_FULL_NAME
 from models import User
 from services.stats_service import StatsService
 from utils import save_csv_report
@@ -112,7 +113,7 @@ class ReportService:
 
             save_csv_report(
                 file_path,
-                "LearnMate Core — общий отчёт по клинике",
+                f"{APP_FULL_NAME} — общий отчёт по клинике",
                 actor.full_name,
                 sections,
             )
@@ -189,7 +190,7 @@ class ReportService:
 
             save_csv_report(
                 file_path,
-                f"LearnMate Core — отчёт по отделу «{department.name}»",
+                f"{APP_FULL_NAME} — отчёт по отделу «{department.name}»",
                 actor.full_name,
                 sections,
             )

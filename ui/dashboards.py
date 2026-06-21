@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (
 
 from constants import (
     ROLE_NAMES,
+    APP_FULL_NAME,
     MAIN_ADMIN_ROLE_ID,
     DEPT_HEAD_ROLE_ID,
     EMPLOYEE_ROLE_ID,
@@ -90,7 +91,7 @@ class AdminDashboardWidget(
                 ("Курсы", self._create_courses_tab()),
                 ("Журнал", self._create_audit_tab()),
             ],
-            brand="LearnMate Core",
+            brand=APP_FULL_NAME,
             subtitle="Администрирование",
             header_widget=self._header_widget,
         )
@@ -183,7 +184,7 @@ class AdminDashboardWidget(
     def _quick_export_report(self):
         self._export_csv_report(
             lambda path: self.report_service.export_admin_report(self.actor_user.id, path),
-            "learnmate_otchet_klinika.csv",
+            "nexora_otchet_klinika.csv",
         )
 
     def _quick_problem_zones(self):
@@ -448,7 +449,7 @@ class DepartmentHeadDashboardWidget(
                 ("Статистика", self._create_statistics_tab()),
                 ("Журнал", self._create_audit_tab()),
             ],
-            brand="LearnMate Core",
+            brand=APP_FULL_NAME,
             subtitle="Руководитель отдела",
             header_widget=self._header_widget,
         )
@@ -565,7 +566,7 @@ class DepartmentHeadDashboardWidget(
             lambda path: self.report_service.export_department_report(
                 self.actor_user.id, path
             ),
-            f"learnmate_otchet_{dept_name}.csv",
+            f"nexora_otchet_{dept_name}.csv",
         )
 
     def _create_statistics_tab(self):

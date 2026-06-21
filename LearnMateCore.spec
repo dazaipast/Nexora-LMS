@@ -35,7 +35,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name="LearnMate Core",
+    name="Nexora LMS",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

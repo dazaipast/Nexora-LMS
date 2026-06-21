@@ -1,4 +1,4 @@
-"""PyQt6 UI components for LearnMate Core."""
+"""PyQt6 UI components for Nexora LMS."""
 
 from ui.windows import LoginWindow, MainWindow
 from ui.dashboards import AdminDashboardWidget, DepartmentHeadDashboardWidget

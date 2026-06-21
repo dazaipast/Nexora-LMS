@@ -1,4 +1,4 @@
-"""Global QSS theme for LearnMate Core."""
+"""Global QSS theme for Nexora LMS."""
 
 FONT_FAMILY = "Segoe UI"
 

@@ -1,4 +1,4 @@
-"""Smoke tests for LearnMate Core — run: python test_smoke.py"""
+"""Smoke tests for Nexora LMS — run: python test_smoke.py"""
 import sys
 import traceback
 
@@ -101,6 +101,7 @@ def test_dept_head_stats():
 
 
 def test_create_department():
+    import uuid
     from database import DatabaseManager
     from services import AuthManager, DepartmentService
     from models import Department
@@ -111,17 +112,18 @@ def test_create_department():
     admin = auth.get_current_user()
     dept_service = DepartmentService(db)
 
+    dept_name = f"Smoke dept {uuid.uuid4().hex[:8]}"
     dept_id = dept_service.create_department(
         admin.id,
-        "Тестовое подразделение smoke",
-        "Создано автотестом",
+        dept_name,
+        "Created by smoke test",
     )
     assert dept_id
 
     with db.session_scope() as session:
         dept = session.query(Department).filter(Department.id == dept_id).first()
         assert dept is not None
-        assert dept.name == "Тестовое подразделение smoke"
+        assert dept.name == dept_name
 
 
 def test_courses_list():
@@ -209,7 +211,7 @@ def test_quiz_parser():
 
 
 def main():
-    print("LearnMate Core smoke tests\n")
+    print("Nexora LMS smoke tests\n")
     check("imports", test_imports)
     check("auth all roles", test_auth_all_roles)
     check("admin stats & export", test_stats_and_reports)

@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 
-from constants import ROLE_NAMES
+from constants import APP_FULL_NAME, APP_NAME, APP_VERSION, APP_TAGLINE, ROLE_NAMES
 from ui.style_helpers import styled_widget, apply_card_shadow
 from services import (
     UserService,
@@ -28,7 +28,7 @@ class LoginWindow(QMainWindow):
     def __init__(self, auth_manager):
         super().__init__()
         self.auth_manager = auth_manager
-        self.setWindowTitle("LearnMate Core — Вход")
+        self.setWindowTitle(f"{APP_FULL_NAME} — Вход")
         self.setFixedSize(920, 520)
         self._init_ui()
 
@@ -45,11 +45,11 @@ class LoginWindow(QMainWindow):
         brand_layout.setContentsMargins(40, 48, 40, 48)
         brand_layout.addStretch()
 
-        brand_title = QLabel("LearnMate Core")
+        brand_title = QLabel(APP_NAME)
         brand_title.setProperty("class", "brandTitle")
         brand_layout.addWidget(brand_title)
 
-        brand_sub = QLabel("Платформа корпоративного обучения")
+        brand_sub = QLabel(APP_TAGLINE)
         brand_sub.setProperty("class", "brandSubtitle")
         brand_sub.setWordWrap(True)
         brand_layout.addWidget(brand_sub)
@@ -125,7 +125,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Ошибка", "Пользователь не найден")
             sys.exit(1)
 
-        self.setWindowTitle(f"LearnMate Core — {self.current_user.full_name}")
+        self.setWindowTitle(f"{APP_FULL_NAME} — {self.current_user.full_name}")
         self.setMinimumSize(1100, 720)
         self.resize(1280, 800)
         self._init_ui()
@@ -235,7 +235,7 @@ class MainWindow(QMainWindow):
         QMessageBox.about(
             self,
             "О программе",
-            f"LearnMate Core v3.0\n"
-            f"Платформа корпоративного обучения\n\n"
+            f"{APP_FULL_NAME} v{APP_VERSION}\n"
+            f"{APP_TAGLINE}\n\n"
             f"Пользователь: {self.current_user.full_name}",
         )
